@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#102b32">
+  <meta name="description" content="浮屿工坊——在云海之上，与朋友自由采集、建造的原创局域网沙盒。">
+  <title>浮屿工坊 · Driftisle Workshop</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <canvas id="game-canvas" aria-label="浮屿工坊 3D 游戏画面"></canvas>
+  <div class="atmosphere" aria-hidden="true"></div>
+
+  <section id="start-screen" class="screen">
+    <div class="start-shell">
+      <header class="brand-row">
+        <a class="brand" href="/" aria-label="浮屿工坊首页">
+          <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+            <path d="M24 3 43 14v20L24 45 5 34V14Z" fill="none" stroke="currentColor" stroke-width="2"/>
+            <path d="m13 19 11-6 11 6-11 6Z" fill="currentColor"/>
+            <path d="m13 25 11 6 11-6M24 25v13" fill="none" stroke="currentColor" stroke-width="2"/>
+            <circle cx="38" cy="9" r="3" fill="#f0ad62"/>
+          </svg>
+          <span>DRIFTISLE <b>WORKSHOP</b></span>
+        </a>
+        <span class="edition">LAN EDITION · 01</span>
+      </header>
+
+      <main class="start-grid">
+        <div class="hero-copy">
+          <div class="eyebrow"><span></span> 云海营造计划</div>
+          <h1>浮屿<br><em>工坊</em></h1>
+          <p class="hero-subtitle">在漂移的世界里，<br>和朋友筑起你们的下一站。</p>
+          <form id="join-form" class="join-form">
+            <label for="player-name">你的旅人代号</label>
+            <div class="join-row">
+              <input id="player-name" name="name" maxlength="16" autocomplete="nickname" placeholder="输入名字" value="旅人" required>
+              <button id="join-button" type="submit"><span>进入浮屿</span><b>↗</b></button>
+            </div>
+            <p id="connection-label" class="connection-label"><i></i> 世界已就绪，等待你的到来</p>
+          </form>
+          <div class="feature-chips" aria-label="游戏特点">
+            <span>实时多人</span><span>自由营造</span><span>自动保存</span>
+          </div>
+        </div>
+
+        <aside class="field-guide">
+          <div class="guide-heading"><span>旅人手册</span><small>FIELD NOTES / 001</small></div>
+          <p>一座漂浮于云海中的小岛，一群尚未抵达的故事。采集原生材料，让每一次放置都成为新的风景。</p>
+          <div class="control-list">
+            <div><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><b>漫游浮屿</b></div>
+            <div><span><kbd>鼠标</kbd></span><b>环顾四周</b></div>
+            <div><span><kbd>左键</kbd><kbd>右键</kbd></span><b>采集 / 放置</b></div>
+            <div><span><kbd>空格</kbd><kbd>Shift</kbd></span><b>跳跃 / 疾行</b></div>
+            <div><span><kbd>1—7</kbd><kbd>滚轮</kbd></span><b>切换材料</b></div>
+            <div><span><kbd>Enter</kbd></span><b>旅团聊天</b></div>
+          </div>
+          <div class="guide-tip"><i>✦</i><span>星珀会在夜晚发光。把它放在高处，为晚归的旅人指个方向。</span></div>
+        </aside>
+      </main>
+
+      <footer class="start-footer"><span>原创程序化世界 · 无外部素材</span><span>同一网络，即可相遇</span></footer>
+    </div>
+  </section>
+
+  <section id="pause-screen" class="screen hidden">
+    <div class="pause-card">
+      <div class="eyebrow"><span></span> 旅途暂歇</div>
+      <h2>浮屿仍在生长</h2>
+      <p>其他旅人的营造会实时继续。</p>
+      <button id="resume-button" class="primary-button">继续漫游 <b>↗</b></button>
+      <div class="lan-share"><small>邀请同一局域网的朋友</small><code id="share-url">http://本机地址:3000</code></div>
+      <div class="pause-controls">WASD 移动 · 空格跳跃 · Enter 聊天 · M 声音 · Esc 暂停</div>
+    </div>
+  </section>
+
+  <div id="hud" class="hud hidden">
+    <header class="hud-top">
+      <div class="hud-brand"><i></i><span>浮屿工坊<small>DRIFTISLE</small></span></div>
+      <div class="session-pill"><i></i><span id="network-status">局域网</span><b>·</b><span id="player-count">1 位旅人</span></div>
+      <div class="world-clock"><span id="clock-icon">☀</span><div><small>浮屿时序</small><b id="world-time">08:00</b></div><button id="sound-toggle" title="切换声音 (M)" aria-label="切换声音">♪</button></div>
+    </header>
+
+    <div class="hud-left">
+      <div class="place-card"><small>当前区域</small><b id="biome-name">青绒浮屿</b><span id="coordinates">X 0 · Y 0 · Z 0</span></div>
+      <div id="chat-feed" class="chat-feed" aria-live="polite"></div>
+    </div>
+
+    <div class="hud-right">
+      <div class="material-readout"><small>准星指向</small><b id="target-name">远眺云海</b><span id="target-distance">—</span></div>
+    </div>
+
+    <div id="crosshair" class="crosshair"><i></i><i></i><span></span></div>
+    <div id="action-hint" class="action-hint">左键采集 · 右键放置</div>
+
+    <footer class="hud-bottom">
+      <div class="control-reminder"><span><kbd>WASD</kbd> 移动</span><span><kbd>SPACE</kbd> 跳跃</span><span><kbd>ENTER</kbd> 聊天</span></div>
+      <div id="hotbar" class="hotbar" aria-label="材料快捷栏"></div>
+      <div class="selected-label"><small>手持材料</small><b id="selected-name">青绒</b></div>
+    </footer>
+  </div>
+
+  <form id="chat-form" class="chat-form hidden">
+    <span>旅团电台</span>
+    <input id="chat-input" maxlength="120" autocomplete="off" placeholder="说点什么…">
+    <button type="submit">发送 ↗</button>
+  </form>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+  <div id="fade" class="fade"></div>
+
+  <script type="module" src="/bundle.js"></script>
+</body>
+</html>
