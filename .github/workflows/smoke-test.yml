@@ -18,8 +18,11 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # 使用 macOS runner 预装的 Android SDK，绕开 setup-android 的 'tools' 包问题
+      - name: Install SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" "platform-tools" >/dev/null 2>&1 || true
 
       - name: Build debug APK
         run: ./gradlew assembleDebug
@@ -38,6 +41,6 @@ jobs:
             adb shell am start -n com.voxelsandbox/.MainActivity || true
             sleep 30
             echo "================= CRASH / APP LOGCAT ================="
-            adb logcat -d -v threadtime | grep -iE "voxelsandbox|AndroidRuntime|VoxelCrash|FATAL EXCEPTION|No configs match" || true
+            adb logcat -d -v threadtime | grep -iE "voxelsandbox|AndroidRuntime|VoxelCrash|FATAL|No configs match" || true
             echo "================= LAST LOGCAT LINES ================="
-            adb logcat -d -v threadtime | tail -80
+            adb logcat -d -v threadtime | tail -60
