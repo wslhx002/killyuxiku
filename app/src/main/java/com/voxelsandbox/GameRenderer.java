@@ -24,7 +24,13 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private final Camera camera = new Camera();
 
     private FloatBuffer lineBuffer;
+    private FloatBuffer bodyBuffer; // 太阳/月亮 billboard 顶点（6 顶点 * 3）
     private Raycaster.Hit currentHit;
+
+    private final SkyCycle sky = new SkyCycle();
+
+    private Runnable onFrame; // 每帧回调（用于驱动 HUD 重绘）
+    public void setOnFrame(Runnable r) { onFrame = r; }
 
     private long lastNanos = 0;
     private volatile boolean meshesBuilding = true;
@@ -53,6 +59,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         player.yaw = 0; player.pitch = 0;
 
         lineBuffer = ByteBuffer.allocateDirect(24 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        bodyBuffer = ByteBuffer.allocateDirect(6 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
 
         // 后台构建全部区块网格
         new Thread(() -> {
@@ -76,19 +83,29 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         lastNanos = now;
         frameCount++;
 
+        sky.update(dt);
         handleInput(dt);
         rebuildDirtyChunks();
         uploadChunkMeshes();
         updateSelection();
 
+        float[] skyCol = sky.skyColor();
+        GLES20.glClearColor(skyCol[0], skyCol[1], skyCol[2], skyCol[3]);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
         player.applyTo(camera);
         camera.updateView();
         float[] mvp = camera.mvp();
 
         drawWorld(mvp);
+        drawSkyBodies(mvp);
         drawSelection(mvp);
+
+        if (onFrame != null) onFrame.run();
     }
+
+    /** 供 HUD 读取的时间进度 [0,1) 与是否白天 */
+    public float dayTime() { return sky.dayTime; }
+    public boolean isDay() { return sky.isDay(); }
 
     private void handleInput(float dt) {
         // 视角
@@ -165,6 +182,8 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private void drawWorld(float[] mvp) {
         shader.use();
         GLES20.glUniformMatrix4fv(shader.uMVP, 1, false, mvp, 0);
+        float[] lt = sky.lightTint();
+        GLES20.glUniform3f(shader.uLightTint, lt[0], lt[1], lt[2]);
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, atlas.textureId);
         GLES20.glUniform1i(shader.uTex, 0);
@@ -190,6 +209,59 @@ public class GameRenderer implements GLSurfaceView.Renderer {
                     Chunk c = cs[cx][cy][cz];
                     if (c.built) c.transparent.draw(shader);
                 }
+        GLES20.glDepthMask(true);
+        GLES20.glDisable(GLES20.GL_BLEND);
+    }
+
+    /** 绘制太阳与月亮 billboard（始终面向相机，随昼夜位置移动） */
+    private void drawSkyBodies(float[] mvp) {
+        float[] f = camera.forward();
+        float[] r = camera.right();
+        // 相机上方向 = cross(right, forward)
+        float ux = r[1] * f[2] - r[2] * f[1];
+        float uy = r[2] * f[0] - r[0] * f[2];
+        float uz = r[0] * f[1] - r[1] * f[0];
+        float ul = (float) Math.sqrt(ux * ux + uy * uy + uz * uz);
+        if (ul > 0) { ux /= ul; uy /= ul; uz /= ul; }
+
+        float e = sky.sunElevation();
+        if (e > -0.18f) {
+            drawBody(mvp, sky.sunDirection(), 16f, new float[]{1f, 0.93f, 0.60f, 0.95f}, r, ux, uy, uz);
+        }
+        if (e < 0.18f) {
+            drawBody(mvp, sky.moonDirection(), 12f, new float[]{0.82f, 0.86f, 1.0f, 0.92f}, r, ux, uy, uz);
+        }
+    }
+
+    private void drawBody(float[] mvp, float[] dir, float size, float[] color,
+                          float[] r, float ux, float uy, float uz) {
+        final float dist = 260f;
+        float cx = camera.x + dir[0] * dist;
+        float cy = camera.y + dir[1] * dist;
+        float cz = camera.z + dir[2] * dist;
+        float hx = r[0] * size, hy = r[1] * size, hz = r[2] * size;
+        float vx = ux * size, vy = uy * size, vz = uz * size;
+        // 两个三角形组成一个面向相机的方形（MC 风格）
+        float[] v = {
+                cx - hx - vx, cy - hy - vy, cz - hz - vz,
+                cx + hx - vx, cy + hy - vy, cz + hz - vz,
+                cx + hx + vx, cy + hy + vy, cz + hz + vz,
+                cx - hx - vx, cy - hy - vy, cz - hz - vz,
+                cx + hx + vx, cy + hy + vy, cz + hz + vz,
+                cx - hx + vx, cy - hy + vy, cz - hz + vz,
+        };
+        bodyBuffer.clear();
+        bodyBuffer.put(v).position(0);
+
+        colorShader.use();
+        GLES20.glUniformMatrix4fv(colorShader.uMVP, 1, false, mvp, 0);
+        GLES20.glUniform4f(colorShader.uColor, color[0], color[1], color[2], color[3]);
+        GLES20.glEnable(GLES20.GL_BLEND);
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+        GLES20.glDepthMask(false);
+        GLES20.glEnableVertexAttribArray(colorShader.aPos);
+        GLES20.glVertexAttribPointer(colorShader.aPos, 3, GLES20.GL_FLOAT, false, 0, bodyBuffer);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, 6);
         GLES20.glDepthMask(true);
         GLES20.glDisable(GLES20.GL_BLEND);
     }

@@ -76,6 +76,8 @@ public class MainActivity extends Activity {
 
         overlay = new OverlayView(this);
         overlay.setWillNotDraw(false);
+        // 每帧重绘 HUD（昼夜时钟需要持续刷新）
+        renderer.setOnFrame(() -> overlay.postInvalidate());
 
         FrameLayout root = new FrameLayout(this);
         root.addView(glView, new FrameLayout.LayoutParams(
@@ -250,6 +252,30 @@ public class MainActivity extends Activity {
             drawFlyButton(canvas);
             drawActionButtons(canvas);
             drawJoystick(canvas);
+            drawClock(canvas);
+        }
+
+        private void drawClock(Canvas c) {
+            if (renderer == null) return;
+            float t = renderer.dayTime();
+            int minutes = (int) (t * 24 * 60);
+            int hh = (minutes / 60) % 24;
+            int mm = minutes % 60;
+            boolean day = renderer.isDay();
+            String label = (day ? "☀ " : "🌙 ") + String.format("%02d:%02d", hh, mm);
+
+            paint.setTextAlign(Paint.Align.LEFT);
+            paint.setTextSize(dp(15));
+            float x = dp(16), y = dp(40);
+            float w = paint.measureText(label);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(day ? 0x66000000 : 0x55000000);
+            c.drawRoundRect(new RectF(x - dp(8), y - dp(18), x + w + dp(8), y + dp(6)),
+                    dp(8), dp(8), paint);
+            paint.setColor(day ? 0xFFFFFFFF : 0xFFD6DCFF);
+            paint.setFakeBoldText(true);
+            c.drawText(label, x, y, paint);
+            paint.setFakeBoldText(false);
         }
 
         private void drawCrosshair(Canvas c) {
@@ -352,6 +378,7 @@ public class MainActivity extends Activity {
             case Block.BRICK:  return 0xFFa14a3a;
             case Block.SNOW:   return 0xFFf0f4f8;
             case Block.GLASS:  return 0xFFb0bec5;
+            case Block.GLOW:   return 0xFFd9a441;
             default:           return 0xFF888888;
         }
     }

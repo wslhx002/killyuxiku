@@ -14,7 +14,7 @@ public class Shader {
     private static final String TAG = "Shader";
 
     public final int program;
-    public final int aPos, aUv, aLight, uMVP, uTex;
+    public final int aPos, aUv, aLight, uMVP, uTex, uLightTint;
 
     private static final String VS =
         "attribute vec3 aPos;\n" +
@@ -34,10 +34,11 @@ public class Shader {
         "varying vec2 vUv;\n" +
         "varying float vLight;\n" +
         "uniform sampler2D uTex;\n" +
+        "uniform vec3 uLightTint;\n" +
         "void main() {\n" +
         "    vec4 c = texture2D(uTex, vUv);\n" +
         "    if (c.a < 0.02) discard;\n" +
-        "    gl_FragColor = vec4(c.rgb * vLight, c.a);\n" +
+        "    gl_FragColor = vec4(c.rgb * vLight * uLightTint, c.a);\n" +
         "}\n";
 
     public Shader() {
@@ -57,6 +58,11 @@ public class Shader {
         aLight = GLES20.glGetAttribLocation(program, "aLight");
         uMVP   = GLES20.glGetUniformLocation(program, "uMVP");
         uTex   = GLES20.glGetUniformLocation(program, "uTex");
+        uLightTint = GLES20.glGetUniformLocation(program, "uLightTint");
+        // 默认白色，避免未设置时渲染为黑色
+        GLES20.glUseProgram(program);
+        GLES20.glUniform3f(uLightTint, 1f, 1f, 1f);
+        GLES20.glUseProgram(0);
     }
 
     private static int compile(int type, String src) {

@@ -55,7 +55,7 @@ public class TextureAtlas {
         drawTile(c, p, 3, 2, glass());         // 11 glass
         drawTile(c, p, 0, 3, snowSide());      // 12 snow side
         drawTile(c, p, 1, 3, woodSide());      // 13 wood side
-        drawTile(c, p, 2, 3, stone());         // 14 spare
+        drawTile(c, p, 2, 3, glowStone());     // 14 发光石
         drawTile(c, p, 3, 3, stone());         // 15 spare
 
         upload(bmp);
@@ -265,6 +265,27 @@ public class TextureAtlas {
                 if ((x % 5) == 0) base = 0xFF4f341b;
                 g[y][x] = base;
             }
+        return g;
+    }
+
+    private int[][] glowStone() {
+        int[][] g = new int[TILE_PX][TILE_PX];
+        Random r = new Random(37);
+        for (int y = 0; y < TILE_PX; y++)
+            for (int x = 0; x < TILE_PX; x++) {
+                int n = r.nextInt(4);
+                g[y][x] = (n == 0) ? 0xFF3a2a18 : (n == 1) ? 0xFF4a3420
+                        : (n == 2) ? 0xFF2e2012 : 0xFF574028;
+            }
+        // 亮斑：暖黄色发光颗粒
+        for (int i = 0; i < 20; i++) {
+            int x = r.nextInt(TILE_PX), y = r.nextInt(TILE_PX);
+            int s = 1 + r.nextInt(2);
+            int col = (r.nextInt(3) == 0) ? 0xFFffe9a8 : 0xFFffc857;
+            for (int dy = 0; dy < s; dy++)
+                for (int dx = 0; dx < s; dx++)
+                    if (x + dx < TILE_PX && y + dy < TILE_PX) g[y + dy][x + dx] = col;
+        }
         return g;
     }
 }

@@ -18,8 +18,9 @@ public final class Block {
     public static final int BRICK  = 10;
     public static final int SNOW   = 11;
     public static final int GLASS  = 12;
+    public static final int GLOW   = 13; // 发光石
 
-    public static final int COUNT = 13;
+    public static final int COUNT = 14;
 
     // 纹理图集中每个方块的 tile 索引（0-based）
     // face order: 0=top, 1=bottom, 2=side (for dirt/stone/sand etc. side=top)
@@ -37,6 +38,7 @@ public final class Block {
             case GLASS:  return 11;
             case DIRT:   return 2;
             case STONE:  return 3;
+            case GLOW:   return 14;
             default:     return 3;
         }
     }
@@ -73,7 +75,7 @@ public final class Block {
 
     /** 玩家可放置的方块循环选择列表 */
     public static final int[] PALETTE = {
-        GRASS, DIRT, STONE, WOOD, LEAVES, SAND, PLANK, COBBLE, BRICK, SNOW, GLASS
+        GRASS, DIRT, STONE, WOOD, LEAVES, SAND, PLANK, COBBLE, BRICK, SNOW, GLASS, GLOW
     };
 
     private Block() {}
