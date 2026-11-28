@@ -132,11 +132,18 @@ public class MainActivity extends Activity {
 
         int slotSize = dp(42);
         int gap = dp(4);
-        int total = slots.length * slotSize + (slots.length - 1) * gap;
+        int n = slots.length;
+        // 可用宽度：左右留边，并给右上角飞行按钮让位
+        int avail = flyBtn.left - dp(8) - dp(10);
+        int fit = Math.max(dp(24), (avail - (n - 1) * gap) / n);
+        if (slotSize > fit) slotSize = fit;
+        int total = n * slotSize + (n - 1) * gap;
         int left = (screenW - total) / 2;
+        int maxLeft = flyBtn.left - dp(8) - total;
+        if (left > maxLeft) left = Math.max(dp(8), maxLeft);
         int top = margin;
         slotBar.set(left - dp(6), top - dp(6), left + total + dp(6), top + slotSize + dp(6));
-        for (int i = 0; i < slots.length; i++) {
+        for (int i = 0; i < n; i++) {
             slots[i] = new Rect(left + i * (slotSize + gap), top,
                     left + i * (slotSize + gap) + slotSize, top + slotSize);
         }
