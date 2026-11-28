@@ -16,6 +16,7 @@ import javax.microedition.khronos.opengles.GL10;
 public class GameRenderer implements GLSurfaceView.Renderer {
 
     private final InputState input;
+    private final android.content.Context appContext;
     private Shader shader;
     private ColorShader colorShader;
     private TextureAtlas atlas;
@@ -39,8 +40,9 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     /** 初始化若失败，保存原因供 HUD 显示（避免无提示直接闪退） */
     public volatile String initError = null;
 
-    public GameRenderer(InputState input) {
+    public GameRenderer(InputState input, android.content.Context ctx) {
         this.input = input;
+        this.appContext = ctx.getApplicationContext();
     }
 
     @Override
@@ -57,7 +59,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
             // 纹理对象属于 GL 上下文，上下文丢失后必须重新上传
             if (atlas == null) atlas = new TextureAtlas();
-            atlas.build();
+            atlas.build(appContext);
 
             lineBuffer = ByteBuffer.allocateDirect(24 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
             bodyBuffer = ByteBuffer.allocateDirect(6 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();

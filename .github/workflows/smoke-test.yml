@@ -43,17 +43,17 @@ jobs:
             adb wait-for-device
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb logcat -c
-            adb shell am start -n com.voxelsandbox/.MainActivity || true
-            sleep 45
-            adb exec-out screencap -p > shot_day.png || true
-            # 旋转视角制造不同画面
-            adb shell input swipe 600 400 300 400 300 || true
-            sleep 2
-            adb exec-out screencap -p > shot_2.png || true
+            adb shell am start -n com.voxelsandbox/.HomeActivity || true
+            sleep 8
+            adb exec-out screencap -p > shot_home.png || true
+            # 点击「开始游戏」进入游戏
+            adb shell input tap 170 140 || true
+            sleep 40
+            adb exec-out screencap -p > shot_game.png || true
             echo "================= CRASH / APP LOGCAT ================="
-            adb logcat -d -v threadtime | grep -iE "VoxelCrash|FATAL EXCEPTION|E/AndroidRuntime|Displayed com.voxelsandbox|GLES|Shader" || true
+            adb logcat -d -v threadtime | grep -iE "VoxelCrash|FATAL EXCEPTION|E/AndroidRuntime|Displayed com.voxelsandbox|TextureAtlas" || true
             echo "================= SCREENSHOT SIZE ================="
-            ls -l shot_day.png shot_2.png || true
+            ls -l shot_home.png shot_game.png || true
 
       - name: Upload screenshots
         if: always()

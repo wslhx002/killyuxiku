@@ -58,7 +58,7 @@ public class MainActivity extends Activity {
     private int pressedBtn = -1; // 视觉按下的按钮
 
     private static final float SENS = 0.0055f;
-    private static final String VERSION_TAG = "v2.0.0";
+    private static final String VERSION_TAG = "v2.1.0";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -71,7 +71,7 @@ public class MainActivity extends Activity {
         hideSystemUI();
 
         input = new InputState();
-        renderer = new GameRenderer(input);
+        renderer = new GameRenderer(input, this);
 
         glView = new GLSurfaceView(this);
         glView.setEGLContextClientVersion(2);
