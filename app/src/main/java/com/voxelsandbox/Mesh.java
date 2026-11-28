@@ -76,6 +76,9 @@ public class Mesh {
         GLES20.glEnableVertexAttribArray(s.aLight);
         GLES20.glVertexAttribPointer(s.aLight, 1, GLES20.GL_FLOAT, false, stride, 20);
         GLES20.glDrawArrays(GLES20.GL_TRIANGLES, 0, vertexCount);
+        GLES20.glDisableVertexAttribArray(s.aPos);
+        GLES20.glDisableVertexAttribArray(s.aUv);
+        GLES20.glDisableVertexAttribArray(s.aLight);
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0);
     }
 

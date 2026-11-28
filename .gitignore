@@ -35,6 +35,7 @@ warnings.log
 build/
 app/build/
 local.properties
+.android-sdk/
 *.iml
 .idea/
 captures/

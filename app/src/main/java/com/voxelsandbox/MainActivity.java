@@ -4,18 +4,22 @@ import android.app.Activity;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.PixelFormat;
 import android.graphics.Rect;
 import android.graphics.RectF;
 import android.opengl.GLSurfaceView;
-import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
 import android.util.SparseArray;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.Window;
 import android.view.WindowManager;
 import android.widget.FrameLayout;
+
+import java.io.File;
+import java.io.FileWriter;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 /**
  * 入口 Activity：全屏 GLSurfaceView + 自绘 HUD（准星/摇杆/按钮/物品栏），
@@ -58,6 +62,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        installCrashHandler();
         requestWindowFeature(Window.FEATURE_NO_TITLE);
         getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
                 WindowManager.LayoutParams.FLAG_FULLSCREEN);
@@ -69,7 +74,8 @@ public class MainActivity extends Activity {
 
         glView = new GLSurfaceView(this);
         glView.setEGLContextClientVersion(2);
-        glView.setEGLConfigChooser(8, 8, 8, 8, 16, 0);
+        // 不强制 RGBA8888：使用系统默认配置（RGB565+depth16），在模拟器与各类 GPU 上兼容性最好，
+        // 避免因找不到匹配 EGL 配置而抛 IllegalArgumentException 导致打开即闪退。
         glView.setRenderer(renderer);
         glView.setRenderMode(GLSurfaceView.RENDERMODE_CONTINUOUSLY);
         glView.setPreserveEGLContextOnPause(true);
@@ -85,6 +91,31 @@ public class MainActivity extends Activity {
         root.addView(overlay, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
         setContentView(root);
+    }
+
+    /** 全局崩溃捕获：把堆栈写入 logcat 与私有目录 crash.txt，便于定位闪退原因 */
+    private void installCrashHandler() {
+        final Thread.UncaughtExceptionHandler previous = Thread.getDefaultUncaughtExceptionHandler();
+        Thread.setDefaultUncaughtExceptionHandler((thread, throwable) -> {
+            try {
+                StringWriter sw = new StringWriter();
+                throwable.printStackTrace(new PrintWriter(sw));
+                String stack = sw.toString();
+                Log.e("VoxelCrash", "Uncaught in " + thread.getName() + "\n" + stack);
+                java.io.File dir = getExternalFilesDir(null);
+                if (dir == null) dir = getFilesDir();
+                FileWriter fw = new FileWriter(new File(dir, "crash.txt"), false);
+                fw.write(stack);
+                fw.close();
+            } catch (Throwable ignored) {
+            }
+            if (previous != null) {
+                previous.uncaughtException(thread, throwable);
+            } else {
+                android.os.Process.killProcess(android.os.Process.myPid());
+                System.exit(10);
+            }
+        });
     }
 
     private void computeLayout() {

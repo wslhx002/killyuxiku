@@ -1,0 +1,43 @@
+name: smoke-test
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  emulator-test:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Launch app on emulator and capture crash log
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          target: default
+          script: |
+            adb wait-for-device
+            adb shell input keyevent 82 || true
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb logcat -c
+            adb shell am start -n com.voxelsandbox/.MainActivity || true
+            sleep 30
+            echo "================= CRASH / APP LOGCAT ================="
+            adb logcat -d -v threadtime | grep -iE "voxelsandbox|AndroidRuntime|VoxelCrash|FATAL EXCEPTION|No configs match" || true
+            echo "================= LAST LOGCAT LINES ================="
+            adb logcat -d -v threadtime | tail -80

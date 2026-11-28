@@ -87,7 +87,6 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         handleInput(dt);
         rebuildDirtyChunks();
         uploadChunkMeshes();
-        updateSelection();
 
         float[] skyCol = sky.skyColor();
         GLES20.glClearColor(skyCol[0], skyCol[1], skyCol[2], skyCol[3]);
@@ -96,6 +95,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         camera.updateView();
         float[] mvp = camera.mvp();
 
+        updateSelection(); // 在相机更新后做射线检测，保证用本帧视角
         drawWorld(mvp);
         drawSkyBodies(mvp);
         drawSelection(mvp);
@@ -282,11 +282,14 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         colorShader.use();
         GLES20.glUniformMatrix4fv(colorShader.uMVP, 1, false, mvp, 0);
         GLES20.glUniform4f(colorShader.uColor, 0f, 0f, 0f, 0.5f);
-        GLES20.glDisable(GLES20.GL_CULL_FACE);
+        // 只启用位置属性；禁用纹理/光照属性，避免驱动读取已解绑的 VBO
+        GLES20.glDisableVertexAttribArray(shader.aUv);
+        GLES20.glDisableVertexAttribArray(shader.aLight);
+        GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, 0); // 使用客户端内存绘制
         GLES20.glEnableVertexAttribArray(colorShader.aPos);
         GLES20.glVertexAttribPointer(colorShader.aPos, 3, GLES20.GL_FLOAT, false, 0, lineBuffer);
         GLES20.glLineWidth(2f);
         GLES20.glDrawArrays(GLES20.GL_LINES, 0, 24);
-        GLES20.glEnable(GLES20.GL_CULL_FACE);
+        GLES20.glDisableVertexAttribArray(colorShader.aPos);
     }
 }
