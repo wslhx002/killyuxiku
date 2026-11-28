@@ -70,7 +70,7 @@ public class MainActivity extends Activity {
         hideSystemUI();
 
         input = new InputState();
-        renderer = new GameRenderer(input);
+        renderer = new GameRenderer(input, getApplicationContext());
 
         glView = new GLSurfaceView(this);
         glView.setEGLContextClientVersion(2);
@@ -262,6 +262,8 @@ public class MainActivity extends Activity {
     protected void onPause() {
         super.onPause();
         glView.onPause();
+        // GL 线程已暂停，此时访问世界数据是安全的
+        if (renderer != null) renderer.saveNow();
     }
 
     // ---- 自绘 HUD ----
@@ -284,6 +286,24 @@ public class MainActivity extends Activity {
             drawActionButtons(canvas);
             drawJoystick(canvas);
             drawClock(canvas);
+            drawSaveStatus(canvas);
+        }
+
+        private void drawSaveStatus(Canvas c) {
+            if (renderer == null || !renderer.savedRecently()) return;
+            String label = "✓ 已保存";
+            paint.setTextAlign(Paint.Align.LEFT);
+            paint.setTextSize(dp(13));
+            float x = dp(16), y = dp(74);
+            float w = paint.measureText(label);
+            paint.setStyle(Paint.Style.FILL);
+            paint.setColor(0x662E7D32);
+            c.drawRoundRect(new RectF(x - dp(8), y - dp(16), x + w + dp(8), y + dp(6)),
+                    dp(8), dp(8), paint);
+            paint.setColor(0xFFE8F5E9);
+            paint.setFakeBoldText(true);
+            c.drawText(label, x, y, paint);
+            paint.setFakeBoldText(false);
         }
 
         private void drawClock(Canvas c) {

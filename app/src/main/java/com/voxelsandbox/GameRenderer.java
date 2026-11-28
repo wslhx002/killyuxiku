@@ -1,5 +1,6 @@
 package com.voxelsandbox;
 
+import android.content.Context;
 import android.opengl.GLES20;
 import android.opengl.GLSurfaceView;
 
@@ -16,11 +17,12 @@ import javax.microedition.khronos.opengles.GL10;
 public class GameRenderer implements GLSurfaceView.Renderer {
 
     private final InputState input;
+    private final Context context;
     private Shader shader;
     private ColorShader colorShader;
     private TextureAtlas atlas;
-    private World world;
-    private Player player;
+    private volatile World world;
+    private volatile Player player;
     private final Camera camera = new Camera();
 
     private FloatBuffer lineBuffer;
@@ -36,8 +38,13 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private volatile boolean meshesBuilding = true;
     private int frameCount = 0;
 
-    public GameRenderer(InputState input) {
+    private static final float AUTOSAVE_SECONDS = 25f;
+    private float autoSaveTimer = 0f;
+    private volatile long lastSaveWallMs = 0;
+
+    public GameRenderer(InputState input, Context context) {
         this.input = input;
+        this.context = context;
     }
 
     @Override
@@ -52,11 +59,32 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         atlas.build();
 
         long seed = 1337L;
+        SaveGame.Data saved = SaveGame.load(context);
         world = new World(atlas, seed);
+        if (saved != null) {
+            world.applyEdits(saved.edits);
+        }
+
         int sx = World.SX / 2, sz = World.SZ / 2;
         int sh = world.getSurfaceHeight(sx, sz);
-        player = new Player(world, sx + 0.5f, sh + 2, sz + 0.5f);
-        player.yaw = 0; player.pitch = 0;
+        float px = sx + 0.5f, py = sh + 2f, pz = sz + 0.5f;
+        float yaw = 0f, pitch = 0f;
+        int slot = 0;
+        float startTime = 0.28f;
+        if (saved != null) {
+            px = clampX(saved.px);
+            py = saved.py;
+            pz = clampZ(saved.pz);
+            yaw = saved.yaw;
+            pitch = saved.pitch;
+            slot = saved.selectedSlot;
+            startTime = saved.dayTime;
+        }
+        player = new Player(world, px, py, pz);
+        player.yaw = yaw;
+        player.pitch = pitch;
+        input.selectedSlot = slot;
+        sky.setDayTime(startTime);
 
         lineBuffer = ByteBuffer.allocateDirect(24 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
         bodyBuffer = ByteBuffer.allocateDirect(6 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
@@ -85,6 +113,11 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
         sky.update(dt);
         handleInput(dt);
+        autoSaveTimer += dt;
+        if (autoSaveTimer >= AUTOSAVE_SECONDS) {
+            autoSaveTimer = 0f;
+            saveNow();
+        }
         rebuildDirtyChunks();
         uploadChunkMeshes();
 
@@ -106,6 +139,32 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     /** 供 HUD 读取的时间进度 [0,1) 与是否白天 */
     public float dayTime() { return sky.dayTime; }
     public boolean isDay() { return sky.isDay(); }
+
+    /** 立即存档。可在 GL 线程暂停后从 UI 线程调用。 */
+    public synchronized void saveNow() {
+        World w = world;
+        Player p = player;
+        if (w == null || p == null) return;
+        if (SaveGame.save(context, w, p, sky, input.selectedSlot)) {
+            lastSaveWallMs = System.currentTimeMillis();
+        }
+    }
+
+    /** HUD：最近一次保存是否在 1.6 秒内 */
+    public boolean savedRecently() {
+        long t = lastSaveWallMs;
+        return t > 0 && System.currentTimeMillis() - t < 1600;
+    }
+
+    private static float clampX(float v) {
+        if (Float.isNaN(v)) return World.SX / 2f + 0.5f;
+        return Math.max(0.5f, Math.min(World.SX - 0.5f, v));
+    }
+
+    private static float clampZ(float v) {
+        if (Float.isNaN(v)) return World.SZ / 2f + 0.5f;
+        return Math.max(0.5f, Math.min(World.SZ - 0.5f, v));
+    }
 
     private void handleInput(float dt) {
         // 视角

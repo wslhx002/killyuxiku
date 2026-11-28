@@ -18,6 +18,14 @@ public final class SkyCycle {
         dayTime = t;
     }
 
+    /** 从存档恢复时间进度 */
+    public void setDayTime(float value) {
+        float v = value - (float) Math.floor(value);
+        if (v < 0) v += 1f;
+        t = v;
+        dayTime = v;
+    }
+
     /** 太阳方向单位向量：t=0 东地平线 → 0.25 天顶 → 0.5 西地平线 → 0.75 脚下 */
     public float[] sunDirection() {
         double a = t * 2.0 * Math.PI;

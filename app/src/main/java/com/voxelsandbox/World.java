@@ -1,5 +1,10 @@
 package com.voxelsandbox;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -24,6 +29,11 @@ public class World {
     private final TextureAtlas atlas;
     private final Noise noise;
     private final long seed;
+
+    /** 玩家改动过的方块（key = idx），存档时只持久化这些差异 */
+    private final Map<Long, Byte> edits = new HashMap<>();
+    /** 每次放置/破坏递增，用于判断是否需要自动存档 */
+    private volatile int editVersion = 0;
 
     // 6 个面的 4 顶点偏移 (x,y,z) —— 顺序对应 UV 左上/右上/右下/左下
     private static final float[][][] FACE_VERT = {
@@ -63,8 +73,29 @@ public class World {
 
     public void setBlock(int x, int y, int z, int id) {
         if (x < 0 || x >= SX || y < 0 || y >= SY || z < 0 || z >= SZ) return;
-        blocks[idx(x, y, z)] = (byte) id;
+        long key = idx(x, y, z);
+        blocks[(int) key] = (byte) id;
+        edits.put(key, (byte) id);
+        editVersion++;
         markDirty(x, y, z);
+    }
+
+    public int getEditVersion() { return editVersion; }
+
+    /** 当前所有玩家改动的副本（可在 GL 线程暂停后安全读取/写入存档） */
+    public Map<Long, Byte> copyEdits() { return new HashMap<>(edits); }
+
+    /** 应用存档中的方块差异（在地形生成后、网格构建前调用） */
+    public void applyEdits(Map<Long, Byte> saved) {
+        if (saved == null || saved.isEmpty()) return;
+        for (Map.Entry<Long, Byte> e : saved.entrySet()) {
+            int k = e.getKey().intValue();
+            if (k < 0 || k >= blocks.length) continue;
+            blocks[k] = e.getValue();
+            edits.put(e.getKey(), e.getValue());
+        }
+        // 载入的改动视为已保存的基线
+        editVersion = 0;
     }
 
     private void markDirty(int x, int y, int z) {
@@ -90,6 +121,7 @@ public class World {
     private void generateTerrain() {
         Random r = new Random(seed ^ 0x9E3779B9L);
         float base = SEA_LEVEL + 2;
+        int[][] heights = new int[SX][SZ];
         for (int x = 0; x < SX; x++) {
             for (int z = 0; z < SZ; z++) {
                 float n = noise.fbm(x * 0.018f, z * 0.018f, 4, 2.0f, 0.5f);
@@ -97,6 +129,7 @@ public class World {
                 int h = (int) (base + n * 10 + mountain * mountain * 28);
                 if (h < 2) h = 2;
                 if (h >= SY) h = SY - 1;
+                heights[x][z] = h;
                 for (int y = 0; y <= h; y++) {
                     int id;
                     if (y == h) {
@@ -120,6 +153,94 @@ public class World {
                 }
             }
         }
+        generateCaves(r, heights);
+    }
+
+    /**
+     * 地下洞穴：从均匀分布的起点挖掘「蠕虫隧道」，并在部分起点处挖 2x2 竖井通向地表。
+     * 所有挖掘都保证距该列地表至少 4 格，避免破坏海床或形成悬空水。
+     */
+    private void generateCaves(Random r, int[][] heights) {
+        List<int[]> cells = new ArrayList<>(64);
+        for (int gx = 0; gx < 8; gx++)
+            for (int gz = 0; gz < 8; gz++) cells.add(new int[]{gx, gz});
+        Collections.shuffle(cells, r);
+
+        int worms = Math.min(44, cells.size());
+        int entrances = 0;
+        for (int i = 0; i < worms; i++) {
+            int[] cell = cells.get(i);
+            int x0 = cell[0] * 12 + 2 + r.nextInt(9);
+            int z0 = cell[1] * 12 + 2 + r.nextInt(9);
+            if (x0 >= SX - 2 || z0 >= SZ - 2) continue;
+            int h = heights[x0][z0];
+            if (h < 10) continue;
+            int y0 = 4 + r.nextInt(Math.max(1, h - 9));
+            if (y0 > h - 6) y0 = h - 6;
+            if (y0 < 4) y0 = 4;
+
+            // 地表竖井入口：只开在陆地上，且避开树干
+            if (entrances < 14 && h > SEA_LEVEL + 2 && getBlock(x0, h + 1, z0) != Block.WOOD) {
+                for (int y = Math.max(2, y0 - 1); y <= h; y++)
+                    for (int dx = 0; dx < 2; dx++)
+                        for (int dz = 0; dz < 2; dz++)
+                            setRaw(x0 + dx, y, z0 + dz, Block.AIR);
+                entrances++;
+            }
+            carveWorm(r, x0 + 0.5f, y0 + 0.5f, z0 + 0.5f, heights);
+        }
+    }
+
+    private void carveWorm(Random r, float fx, float fy, float fz, int[][] heights) {
+        float dx = r.nextFloat() - 0.5f, dy = (r.nextFloat() - 0.5f) * 0.5f, dz = r.nextFloat() - 0.5f;
+        float len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1e-4f) { dx = 0; dy = 0; dz = 1; len = 1; }
+        dx /= len; dy /= len; dz /= len;
+
+        int steps = 60 + r.nextInt(80);
+        for (int s = 0; s < steps; s++) {
+            carveSphere(fx, fy, fz, 1.1f + r.nextFloat() * 0.6f, heights);
+            dx += (r.nextFloat() - 0.5f) * 0.35f;
+            dy += (r.nextFloat() - 0.5f) * 0.18f;
+            dz += (r.nextFloat() - 0.5f) * 0.35f;
+            len = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+            if (len < 1e-4f) { dx = 0; dy = 0; dz = 1; len = 1; }
+            dx /= len; dy /= len; dz /= len;
+            fx += dx; fy += dy * 0.7f; fz += dz;
+
+            if (fx < 3 || fx > SX - 4 || fz < 3 || fz > SZ - 4) {
+                dx = -dx; dz = -dz;
+                fx = Math.max(3, Math.min(SX - 4, fx));
+                fz = Math.max(3, Math.min(SZ - 4, fz));
+            }
+            int ix = Math.max(0, Math.min(SX - 1, (int) fx));
+            int iz = Math.max(0, Math.min(SZ - 1, (int) fz));
+            int hh = heights[ix][iz];
+            if (hh < 8 || fy > hh - 4) {
+                dy = -dy;
+                if (hh >= 8) fy = Math.min(hh - 4, fy);
+            }
+            if (fy < 3) { dy = Math.abs(dy); fy = 3; }
+        }
+    }
+
+    private void carveSphere(float cx, float cy, float cz, float rad, int[][] heights) {
+        int x0 = (int) Math.floor(cx - rad), x1 = (int) Math.ceil(cx + rad);
+        int y0 = (int) Math.floor(cy - rad), y1 = (int) Math.ceil(cy + rad);
+        int z0 = (int) Math.floor(cz - rad), z1 = (int) Math.ceil(cz + rad);
+        float r2 = rad * rad;
+        for (int x = Math.max(1, x0); x <= Math.min(SX - 2, x1); x++)
+            for (int z = Math.max(1, z0); z <= Math.min(SZ - 2, z1); z++) {
+                int hh = heights[x][z];
+                if (hh < 8) continue;
+                int ymax = hh - 4;
+                for (int y = Math.max(3, y0); y <= Math.min(ymax, y1); y++) {
+                    float ddx = x + 0.5f - cx, ddy = y + 0.5f - cy, ddz = z + 0.5f - cz;
+                    if (ddx * ddx + ddy * ddy + ddz * ddz <= r2) {
+                        setRaw(x, y, z, Block.AIR);
+                    }
+                }
+            }
     }
 
     private void placeTree(int x, int y, int z, Random r) {
