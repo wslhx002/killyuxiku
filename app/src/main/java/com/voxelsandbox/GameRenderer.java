@@ -1,0 +1,220 @@
+package com.voxelsandbox;
+
+import android.opengl.GLES20;
+import android.opengl.GLSurfaceView;
+
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.FloatBuffer;
+
+import javax.microedition.khronos.egl.EGLConfig;
+import javax.microedition.khronos.opengles.GL10;
+
+/**
+ * 主渲染器：负责 GL 资源、世界构建调度、玩家更新与绘制。
+ */
+public class GameRenderer implements GLSurfaceView.Renderer {
+
+    private final InputState input;
+    private Shader shader;
+    private ColorShader colorShader;
+    private TextureAtlas atlas;
+    private World world;
+    private Player player;
+    private final Camera camera = new Camera();
+
+    private FloatBuffer lineBuffer;
+    private Raycaster.Hit currentHit;
+
+    private long lastNanos = 0;
+    private volatile boolean meshesBuilding = true;
+    private int frameCount = 0;
+
+    public GameRenderer(InputState input) {
+        this.input = input;
+    }
+
+    @Override
+    public void onSurfaceCreated(GL10 gl, EGLConfig config) {
+        GLES20.glClearColor(0.53f, 0.81f, 0.92f, 1.0f); // 天空蓝
+        GLES20.glEnable(GLES20.GL_DEPTH_TEST);
+        // 不启用背面剔除：我们只为朝外的可见面生成三角形，绕序差异不会导致丢面
+
+        shader = new Shader();
+        colorShader = new ColorShader();
+        atlas = new TextureAtlas();
+        atlas.build();
+
+        long seed = 1337L;
+        world = new World(atlas, seed);
+        int sx = World.SX / 2, sz = World.SZ / 2;
+        int sh = world.getSurfaceHeight(sx, sz);
+        player = new Player(world, sx + 0.5f, sh + 2, sz + 0.5f);
+        player.yaw = 0; player.pitch = 0;
+
+        lineBuffer = ByteBuffer.allocateDirect(24 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+
+        // 后台构建全部区块网格
+        new Thread(() -> {
+            world.rebuildAllMeshes();
+            meshesBuilding = false;
+        }, "mesh-builder").start();
+
+        lastNanos = System.nanoTime();
+    }
+
+    @Override
+    public void onSurfaceChanged(GL10 gl, int width, int height) {
+        GLES20.glViewport(0, 0, width, height);
+        camera.updateProjection(width, height);
+    }
+
+    @Override
+    public void onDrawFrame(GL10 gl) {
+        long now = System.nanoTime();
+        float dt = Math.min(0.05f, (now - lastNanos) / 1e9f);
+        lastNanos = now;
+        frameCount++;
+
+        handleInput(dt);
+        rebuildDirtyChunks();
+        uploadChunkMeshes();
+        updateSelection();
+
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+        player.applyTo(camera);
+        camera.updateView();
+        float[] mvp = camera.mvp();
+
+        drawWorld(mvp);
+        drawSelection(mvp);
+    }
+
+    private void handleInput(float dt) {
+        // 视角
+        player.yaw += input.consumeYaw();
+        player.pitch += input.consumePitch();
+        float lim = (float) (Math.PI / 2 - 0.01);
+        if (player.pitch > lim) player.pitch = lim;
+        if (player.pitch < -lim) player.pitch = -lim;
+
+        // 飞行切换
+        if (input.consumeFlyToggle()) {
+            input.flying = !input.flying;
+            player.vy = 0;
+        }
+
+        player.update(dt, input.moveX(), input.moveZ(), input.consumeJump(), input.flying);
+
+        // 方块操作
+        if (input.consumeBreak() && currentHit != null) {
+            world.setBlock(currentHit.x, currentHit.y, currentHit.z, Block.AIR);
+        }
+        if (input.consumePlace() && currentHit != null) {
+            int id = Block.PALETTE[input.selectedSlot % Block.PALETTE.length];
+            if (!intersectsPlayer(currentHit.nx, currentHit.ny, currentHit.nz)) {
+                world.setBlock(currentHit.nx, currentHit.ny, currentHit.nz, id);
+            }
+        }
+    }
+
+    private boolean intersectsPlayer(int bx, int by, int bz) {
+        float hw = Player.WIDTH / 2f;
+        float minX = player.x - hw, maxX = player.x + hw;
+        float minY = player.y, maxY = player.y + Player.HEIGHT;
+        float minZ = player.z - hw, maxZ = player.z + hw;
+        return bx + 1 > minX && bx < maxX
+                && by + 1 > minY && by < maxY
+                && bz + 1 > minZ && bz < maxZ;
+    }
+
+    private void rebuildDirtyChunks() {
+        int budget = 4; // 每帧最多重建 4 个区块，避免卡顿
+        Chunk[][][] cs = world.getChunks();
+        outer:
+        for (int cx = 0; cx < World.CX; cx++)
+            for (int cy = 0; cy < World.CY; cy++)
+                for (int cz = 0; cz < World.CZ; cz++) {
+                    Chunk c = cs[cx][cy][cz];
+                    if (c.needsRebuild) {
+                        world.rebuildChunkMesh(c);
+                        if (--budget <= 0) break outer;
+                    }
+                }
+    }
+
+    private void uploadChunkMeshes() {
+        Chunk[][][] cs = world.getChunks();
+        for (int cx = 0; cx < World.CX; cx++)
+            for (int cy = 0; cy < World.CY; cy++)
+                for (int cz = 0; cz < World.CZ; cz++) {
+                    Chunk c = cs[cx][cy][cz];
+                    if (c.built) {
+                        c.opaque.uploadIfDirty();
+                        c.transparent.uploadIfDirty();
+                    }
+                }
+    }
+
+    private void updateSelection() {
+        float[] f = camera.forward();
+        currentHit = Raycaster.cast(world, camera.x, camera.y, camera.z,
+                f[0], f[1], f[2], 6f);
+    }
+
+    private void drawWorld(float[] mvp) {
+        shader.use();
+        GLES20.glUniformMatrix4fv(shader.uMVP, 1, false, mvp, 0);
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, atlas.textureId);
+        GLES20.glUniform1i(shader.uTex, 0);
+
+        Chunk[][][] cs = world.getChunks();
+        // 不透明：深度写入开启
+        GLES20.glDepthMask(true);
+        GLES20.glDisable(GLES20.GL_BLEND);
+        for (int cx = 0; cx < World.CX; cx++)
+            for (int cy = 0; cy < World.CY; cy++)
+                for (int cz = 0; cz < World.CZ; cz++) {
+                    Chunk c = cs[cx][cy][cz];
+                    if (c.built) c.opaque.draw(shader);
+                }
+
+        // 透明：混合，关闭深度写入
+        GLES20.glEnable(GLES20.GL_BLEND);
+        GLES20.glBlendFunc(GLES20.GL_SRC_ALPHA, GLES20.GL_ONE_MINUS_SRC_ALPHA);
+        GLES20.glDepthMask(false);
+        for (int cx = 0; cx < World.CX; cx++)
+            for (int cy = 0; cy < World.CY; cy++)
+                for (int cz = 0; cz < World.CZ; cz++) {
+                    Chunk c = cs[cx][cy][cz];
+                    if (c.built) c.transparent.draw(shader);
+                }
+        GLES20.glDepthMask(true);
+        GLES20.glDisable(GLES20.GL_BLEND);
+    }
+
+    private void drawSelection(float[] mvp) {
+        if (currentHit == null) return;
+        float e = 0.004f; // 轻微膨胀避免 z-fighting
+        float x = currentHit.x - e, y = currentHit.y - e, z = currentHit.z - e;
+        float X = x + 1 + 2 * e, Y = y + 1 + 2 * e, Z = z + 1 + 2 * e;
+        float[] v = {
+                x,y,z, X,y,z,  X,y,z, X,y,Z,  X,y,Z, x,y,Z,  x,y,Z, x,y,z, // 底
+                x,Y,z, X,Y,z,  X,Y,z, X,Y,Z,  X,Y,Z, x,Y,Z,  x,Y,Z, x,Y,z, // 顶
+                x,y,z, x,Y,z,  X,y,z, X,Y,z,  X,y,Z, X,Y,Z,  x,y,Z, x,Y,Z  // 竖
+        };
+        lineBuffer.clear();
+        lineBuffer.put(v).position(0);
+
+        colorShader.use();
+        GLES20.glUniformMatrix4fv(colorShader.uMVP, 1, false, mvp, 0);
+        GLES20.glUniform4f(colorShader.uColor, 0f, 0f, 0f, 0.5f);
+        GLES20.glDisable(GLES20.GL_CULL_FACE);
+        GLES20.glEnableVertexAttribArray(colorShader.aPos);
+        GLES20.glVertexAttribPointer(colorShader.aPos, 3, GLES20.GL_FLOAT, false, 0, lineBuffer);
+        GLES20.glLineWidth(2f);
+        GLES20.glDrawArrays(GLES20.GL_LINES, 0, 24);
+        GLES20.glEnable(GLES20.GL_CULL_FACE);
+    }
+}

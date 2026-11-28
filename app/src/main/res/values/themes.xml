@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.VoxelSandbox" parent="android:Theme.Material.NoActionBar" />
+    <style name="Theme.VoxelSandbox.Fullscreen" parent="Theme.VoxelSandbox">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowBackground">@color/sky</item>
+    </style>
+</resources>

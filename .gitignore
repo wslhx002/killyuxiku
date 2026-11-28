@@ -29,3 +29,15 @@ game28.dta
 
 # Log files
 warnings.log
+
+# Android / Gradle build artifacts
+.gradle/
+build/
+app/build/
+local.properties
+*.iml
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
