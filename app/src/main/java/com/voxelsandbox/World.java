@@ -234,8 +234,8 @@ public class World {
     private void addFace(Mesh m, int x, int y, int z, int face, float[] uv, float light) {
         float[][] v = FACE_VERT[face];
         float u0 = uv[0], v0 = uv[1], u1 = uv[2], v1 = uv[3];
-        // 角顺序：左上,右上,右下,左下
-        float[][] cuv = {{u0, v1}, {u1, v1}, {u1, v0}, {u0, v0}};
+        // 角顺序：左上,右上,右下,左下（v0 为贴图顶部）
+        float[][] cuv = {{u0, v0}, {u1, v0}, {u1, v1}, {u0, v1}};
         // 三角形 0,1,2
         for (int t : new int[]{0, 1, 2}) {
             m.addVertex(x + v[t][0], y + v[t][1], z + v[t][2], cuv[t][0], cuv[t][1], light);

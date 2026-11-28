@@ -22,14 +22,15 @@ public class TextureAtlas {
 
     public int textureId = 0;
 
-    /** 返回 tile 的 GL 纹理坐标 [u0,v0,u1,v1]，半像素内缩避免相邻格渗色 */
+    /** 返回 tile 的 GL 纹理坐标 [u0,v0,u1,v1]，半像素内缩避免相邻格渗色。
+     *  注意：Bitmap 第 0 行被上传到纹理 v=0 一侧，因此 v 不做翻转。 */
     public float[] uvForTile(int tileIndex) {
         int col = tileIndex % TILES_PER_ROW;
         int row = tileIndex / TILES_PER_ROW;
         float u0 = (float) col / TILES_PER_ROW + HALF_TEXEL;
         float u1 = (float) (col + 1) / TILES_PER_ROW - HALF_TEXEL;
-        float v1 = 1f - (float) row / TILES_PER_ROW - HALF_TEXEL;
-        float v0 = 1f - (float) (row + 1) / TILES_PER_ROW + HALF_TEXEL;
+        float v0 = (float) row / TILES_PER_ROW + HALF_TEXEL;
+        float v1 = (float) (row + 1) / TILES_PER_ROW - HALF_TEXEL;
         return new float[]{u0, v0, u1, v1};
     }
 
