@@ -19,7 +19,9 @@
 
 ## 游戏特性
 
-- **手写 3D 渲染器**：基于 OpenGL ES 2.0，按区块（Chunk）网格化，仅生成朝向空气的可见面；不透明与透明方块分两遍绘制，支持水体/玻璃的半透明混合。
+- **手写 3D 渲染器**：基于 OpenGL ES 2.0，按区块（Chunk）网格化，仅生成朝向空气的可见面；不透明与透明方块分两遍绘制，支持水体/玻璃的半透明混合；开启背面剔除与距离雾。
+- **PNG 贴图资源**：16 张原创 16×16 像素方块贴图随 APK 打包在 `assets/textures/`，运行时拼成图集上传 GPU。
+- **首页**：启动先进入首页（开始游戏 / 玩法说明 / 关于），不会一打开就直接加载世界。
 - **程序化地形**：值噪声 + 分形叠加（fBm）生成山地、平原、水域与雪线，并在草地上自动种树。
 - **第一人称探索**：重力、跳跃与 AABB 体素碰撞，支持「创造飞行」模式自由穿梭于世界。
 - **方块交互**：体素射线检测选中目标方块并高亮线框，可破坏、放置；放置时自动避免把方块卡进玩家身体。
@@ -89,7 +91,8 @@ export GRADLE_OPTS="-Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort=18080 -Dhttps.pr
 │   └── src/main/
 │       ├── AndroidManifest.xml
 │       ├── java/com/voxelsandbox/   # 全部游戏源码
-│       └── res/                     # 启动图标、字符串、主题
+│       ├── assets/textures/         # 16 张 16x16 PNG 方块贴图
+│       └── res/                     # 启动图标、首页布局、字符串、主题
 ├── build.gradle / settings.gradle / gradle.properties
 ├── gradle/ + gradlew                # Gradle Wrapper
 └── VoxelCraft.apk                   # 已构建的 debug 安装包
