@@ -47,7 +47,10 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     public void onSurfaceCreated(GL10 gl, EGLConfig config) {
         GLES20.glClearColor(0.53f, 0.81f, 0.92f, 1.0f); // 天空蓝
         GLES20.glEnable(GLES20.GL_DEPTH_TEST);
-        // 不启用背面剔除：我们只为朝外的可见面生成三角形，绕序差异不会导致丢面
+        // 面向外的面按逆时针绕序生成，开启背面剔除：减少一半填充率，且不再看到地形内壁
+        GLES20.glEnable(GLES20.GL_CULL_FACE);
+        GLES20.glCullFace(GLES20.GL_BACK);
+        GLES20.glFrontFace(GLES20.GL_CCW);
         try {
             shader = new Shader();
             colorShader = new ColorShader();
@@ -62,7 +65,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
             if (world == null) {
                 world = new World(atlas, 1337L);
                 int[] sp = world.findSpawn();
-                player = new Player(world, sp[0] + 0.5f, sp[1] + 2f, sp[2] + 0.5f);
+                player = new Player(world, sp[0] + 0.5f, sp[1] + 0.05f, sp[2] + 0.5f);
                 player.yaw = 0.6f; player.pitch = -0.15f;
                 meshesBuilding = true;
                 markAllChunksForBuild();
@@ -214,7 +217,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         // 距离雾：颜色与天空一致，遮住有限世界的边缘并增强纵深
         GLES20.glUniform3f(shader.uCamPos, camera.x, camera.y, camera.z);
         GLES20.glUniform3f(shader.uFogColor, skyCol[0], skyCol[1], skyCol[2]);
-        GLES20.glUniform2f(shader.uFogParam, 52f, 128f);
+        GLES20.glUniform2f(shader.uFogParam, 46f, 112f);
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, atlas.textureId);
         GLES20.glUniform1i(shader.uTex, 0);

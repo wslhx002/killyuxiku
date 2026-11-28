@@ -25,14 +25,14 @@ public class World {
     private final Noise noise;
     private final long seed;
 
-    // 6 个面的 4 顶点偏移 (x,y,z) —— 顺序对应 UV 左上/右上/右下/左下
+    // 6 个面的 4 顶点偏移 (x,y,z) —— 绕序保证从外侧看为逆时针(CCW)，可开启背面剔除
     private static final float[][][] FACE_VERT = {
             {{1, 0, 1}, {1, 0, 0}, {1, 1, 0}, {1, 1, 1}}, // +X
             {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}}, // -X
             {{0, 1, 1}, {1, 1, 1}, {1, 1, 0}, {0, 1, 0}}, // +Y
             {{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}, // -Y
-            {{1, 0, 1}, {0, 0, 1}, {0, 1, 1}, {1, 1, 1}}, // +Z
-            {{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}}, // -Z
+            {{0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}}, // +Z
+            {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 0, 0}}, // -Z
     };
     private static final float[] FACE_LIGHT = {0.82f, 0.82f, 1.0f, 0.55f, 0.72f, 0.72f};
     private static final int[][] FACE_NEI = {
@@ -120,6 +120,7 @@ public class World {
                 }
             }
         }
+        flattenSpawnArea();
     }
 
     private void placeTree(int x, int y, int z, Random r) {
@@ -144,22 +145,39 @@ public class World {
         blocks[idx(x, y, z)] = (byte) id;
     }
 
-    /** 寻找一个位于水面之上、非雪线的安全出生点，返回 {x, 地表y, z} */
-    public int[] findSpawn() {
-        int cx = SX / 2, cz = SZ / 2;
-        for (int r = 0; r < 40; r++) {
-            for (int dx = -r; dx <= r; dx++) {
-                for (int dz = -r; dz <= r; dz++) {
-                    int x = cx + dx, z = cz + dz;
-                    if (x < 2 || x >= SX - 2 || z < 2 || z >= SZ - 2) continue;
-                    int h = getSurfaceHeight(x, z);
-                    if (h > SEA_LEVEL + 1 && h < SNOW_LINE - 3) return new int[]{x, h, z};
+    /** 把出生点周围整平为一小块草甸，保证开屏视野开阔、不卡在山体里 */
+    private void flattenSpawnArea() {
+        int cx = SX / 2, cz = SZ / 2, r = 5;
+        // 取区域内平均地表高度（忽略水面），夹在安全区间
+        int sum = 0, cnt = 0;
+        for (int dx = -r; dx <= r; dx++)
+            for (int dz = -r; dz <= r; dz++) {
+                int h = getSurfaceHeight(cx + dx, cz + dz);
+                if (h > SEA_LEVEL) { sum += h; cnt++; }
+            }
+        int h0 = cnt > 0 ? sum / cnt : SEA_LEVEL + 4;
+        h0 = Math.max(SEA_LEVEL + 2, Math.min(SNOW_LINE - 8, h0));
+        for (int dx = -r - 3; dx <= r + 3; dx++)
+            for (int dz = -r - 3; dz <= r + 3; dz++) {
+                int x = cx + dx, z = cz + dz;
+                if (x < 0 || x >= SX || z < 0 || z >= SZ) continue;
+                // 清理上方（含树木/水面）
+                for (int y = h0 + 1; y < SY; y++) setRaw(x, y, z, Block.AIR);
+                // 重塑下方
+                for (int y = 0; y <= h0; y++) {
+                    int id;
+                    if (y == h0) id = Block.GRASS;
+                    else if (y >= h0 - 3) id = Block.DIRT;
+                    else id = Block.STONE;
+                    setRaw(x, y, z, id);
                 }
             }
-        }
-        int h = getSurfaceHeight(cx, cz);
-        return new int[]{cx, h, cz};
+        spawnX = cx; spawnY = h0 + 1; spawnZ = cz;
     }
+
+    public int[] findSpawn() { return new int[]{spawnX, spawnY, spawnZ}; }
+
+    private int spawnX, spawnY, spawnZ;
 
     public int getSurfaceHeight(int x, int z) {
         if (x < 0) x = 0; if (x >= SX) x = SX - 1;
