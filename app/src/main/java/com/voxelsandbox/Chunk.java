@@ -12,8 +12,8 @@ public class Chunk {
 
     public Chunk(int cx, int cy, int cz) {
         this.cx = cx; this.cy = cy; this.cz = cz;
-        opaque = new Mesh(12 * 1024);
-        transparent = new Mesh(4 * 1024);
+        opaque = new Mesh(4 * 1024);
+        transparent = new Mesh(1024);
     }
 
     public void dispose() {

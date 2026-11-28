@@ -58,6 +58,7 @@ public class MainActivity extends Activity {
     private int pressedBtn = -1; // 视觉按下的按钮
 
     private static final float SENS = 0.0055f;
+    private static final String VERSION_TAG = "v1.1.2";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -284,6 +285,27 @@ public class MainActivity extends Activity {
             drawActionButtons(canvas);
             drawJoystick(canvas);
             drawClock(canvas);
+            drawDebug(canvas);
+        }
+
+        private void drawDebug(Canvas c) {
+            paint.setTextAlign(Paint.Align.LEFT);
+            paint.setFakeBoldText(false);
+            paint.setColor(0x99FFFFFF);
+            paint.setTextSize(dp(11));
+            c.drawText(VERSION_TAG, dp(12), screenH - dp(10), paint);
+
+            String err = renderer != null ? renderer.initError : null;
+            if (err != null) {
+                paint.setColor(0xFFFF5252);
+                paint.setTextSize(dp(12));
+                float y = screenH / 2f + dp(40);
+                int n = 60;
+                for (int i = 0; i < err.length(); i += n) {
+                    c.drawText(err.substring(i, Math.min(err.length(), i + n)), dp(20), y, paint);
+                    y += dp(16);
+                }
+            }
         }
 
         private void drawClock(Canvas c) {

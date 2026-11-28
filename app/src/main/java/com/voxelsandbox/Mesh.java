@@ -66,7 +66,7 @@ public class Mesh {
     }
 
     public void draw(Shader s) {
-        if (vertexCount == 0) return;
+        if (vertexCount == 0 || vbo == 0) return;
         GLES20.glBindBuffer(GLES20.GL_ARRAY_BUFFER, vbo);
         int stride = FLOATS_PER_VERTEX * 4;
         GLES20.glEnableVertexAttribArray(s.aPos);
@@ -95,5 +95,7 @@ public class Mesh {
             vbo = 0;
         }
         uploaded = false;
+        // 上下文丢失后需重新上传，保留 dirty 以便自动重建 VBO
+        dirty = true;
     }
 }

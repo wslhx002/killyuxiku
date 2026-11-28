@@ -36,6 +36,9 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     private volatile boolean meshesBuilding = true;
     private int frameCount = 0;
 
+    /** 初始化若失败，保存原因供 HUD 显示（避免无提示直接闪退） */
+    public volatile String initError = null;
+
     public GameRenderer(InputState input) {
         this.input = input;
     }
@@ -45,29 +48,48 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         GLES20.glClearColor(0.53f, 0.81f, 0.92f, 1.0f); // 天空蓝
         GLES20.glEnable(GLES20.GL_DEPTH_TEST);
         // 不启用背面剔除：我们只为朝外的可见面生成三角形，绕序差异不会导致丢面
+        try {
+            shader = new Shader();
+            colorShader = new ColorShader();
 
-        shader = new Shader();
-        colorShader = new ColorShader();
-        atlas = new TextureAtlas();
-        atlas.build();
+            // 纹理对象属于 GL 上下文，上下文丢失后必须重新上传
+            if (atlas == null) atlas = new TextureAtlas();
+            atlas.build();
 
-        long seed = 1337L;
-        world = new World(atlas, seed);
-        int sx = World.SX / 2, sz = World.SZ / 2;
-        int sh = world.getSurfaceHeight(sx, sz);
-        player = new Player(world, sx + 0.5f, sh + 2, sz + 0.5f);
-        player.yaw = 0; player.pitch = 0;
+            lineBuffer = ByteBuffer.allocateDirect(24 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+            bodyBuffer = ByteBuffer.allocateDirect(6 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
 
-        lineBuffer = ByteBuffer.allocateDirect(24 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
-        bodyBuffer = ByteBuffer.allocateDirect(6 * 3 * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
-
-        // 后台构建全部区块网格
-        new Thread(() -> {
-            world.rebuildAllMeshes();
-            meshesBuilding = false;
-        }, "mesh-builder").start();
-
+            if (world == null) {
+                world = new World(atlas, 1337L);
+                int sx = World.SX / 2, sz = World.SZ / 2;
+                int sh = world.getSurfaceHeight(sx, sz);
+                player = new Player(world, sx + 0.5f, sh + 2, sz + 0.5f);
+                player.yaw = 0; player.pitch = 0;
+                meshesBuilding = true;
+                markAllChunksForBuild();
+            } else {
+                // GL 上下文重建：顶点数据仍在 CPU，丢弃旧 VBO 后自动重传
+                for (int cx = 0; cx < World.CX; cx++)
+                    for (int cy = 0; cy < World.CY; cy++)
+                        for (int cz = 0; cz < World.CZ; cz++) {
+                            world.getChunks()[cx][cy][cz].opaque.dispose();
+                            world.getChunks()[cx][cy][cz].transparent.dispose();
+                        }
+            }
+            initError = null;
+        } catch (Throwable t) {
+            initError = t.toString();
+            android.util.Log.e("VoxelCrash", "onSurfaceCreated failed", t);
+        }
         lastNanos = System.nanoTime();
+    }
+
+    /** 首帧时把所有区块标记为待构建（在 GL 线程分帧完成，避免跨线程竞态） */
+    private void markAllChunksForBuild() {
+        for (int cx = 0; cx < World.CX; cx++)
+            for (int cy = 0; cy < World.CY; cy++)
+                for (int cz = 0; cz < World.CZ; cz++)
+                    world.getChunks()[cx][cy][cz].needsRebuild = true;
     }
 
     @Override
@@ -82,6 +104,12 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         float dt = Math.min(0.05f, (now - lastNanos) / 1e9f);
         lastNanos = now;
         frameCount++;
+
+        if (world == null || player == null) {
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
+            if (onFrame != null) onFrame.run();
+            return;
+        }
 
         sky.update(dt);
         handleInput(dt);
@@ -146,7 +174,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
     }
 
     private void rebuildDirtyChunks() {
-        int budget = 4; // 每帧最多重建 4 个区块，避免卡顿
+        int budget = 8; // 每帧最多重建 8 个区块，避免卡顿
         Chunk[][][] cs = world.getChunks();
         outer:
         for (int cx = 0; cx < World.CX; cx++)
