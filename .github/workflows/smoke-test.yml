@@ -47,7 +47,7 @@ jobs:
             sleep 8
             adb exec-out screencap -p > shot_home.png || true
             # 点击「开始游戏」进入游戏
-            adb shell input tap 170 140 || true
+            adb shell input tap 160 101 || true
             sleep 40
             adb exec-out screencap -p > shot_game.png || true
             echo "================= CRASH / APP LOGCAT ================="
