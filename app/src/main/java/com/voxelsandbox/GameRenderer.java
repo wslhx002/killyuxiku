@@ -61,10 +61,9 @@ public class GameRenderer implements GLSurfaceView.Renderer {
 
             if (world == null) {
                 world = new World(atlas, 1337L);
-                int sx = World.SX / 2, sz = World.SZ / 2;
-                int sh = world.getSurfaceHeight(sx, sz);
-                player = new Player(world, sx + 0.5f, sh + 2, sz + 0.5f);
-                player.yaw = 0; player.pitch = 0;
+                int[] sp = world.findSpawn();
+                player = new Player(world, sp[0] + 0.5f, sp[1] + 2f, sp[2] + 0.5f);
+                player.yaw = 0.6f; player.pitch = -0.15f;
                 meshesBuilding = true;
                 markAllChunksForBuild();
             } else {
@@ -124,7 +123,7 @@ public class GameRenderer implements GLSurfaceView.Renderer {
         float[] mvp = camera.mvp();
 
         updateSelection(); // 在相机更新后做射线检测，保证用本帧视角
-        drawWorld(mvp);
+        drawWorld(mvp, skyCol);
         drawSkyBodies(mvp);
         drawSelection(mvp);
 
@@ -207,11 +206,15 @@ public class GameRenderer implements GLSurfaceView.Renderer {
                 f[0], f[1], f[2], 6f);
     }
 
-    private void drawWorld(float[] mvp) {
+    private void drawWorld(float[] mvp, float[] skyCol) {
         shader.use();
         GLES20.glUniformMatrix4fv(shader.uMVP, 1, false, mvp, 0);
         float[] lt = sky.lightTint();
         GLES20.glUniform3f(shader.uLightTint, lt[0], lt[1], lt[2]);
+        // 距离雾：颜色与天空一致，遮住有限世界的边缘并增强纵深
+        GLES20.glUniform3f(shader.uCamPos, camera.x, camera.y, camera.z);
+        GLES20.glUniform3f(shader.uFogColor, skyCol[0], skyCol[1], skyCol[2]);
+        GLES20.glUniform2f(shader.uFogParam, 52f, 128f);
         GLES20.glActiveTexture(GLES20.GL_TEXTURE0);
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, atlas.textureId);
         GLES20.glUniform1i(shader.uTex, 0);

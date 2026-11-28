@@ -27,7 +27,7 @@ public final class Block {
     public static int topTile(int id) {
         switch (id) {
             case GRASS:  return 0;
-            case SNOW:   return 1;
+            case SNOW:   return 15;
             case WOOD:   return 4;
             case LEAVES: return 5;
             case SAND:   return 6;

@@ -32,7 +32,7 @@ jobs:
       - name: Build debug APK
         run: ./gradlew assembleDebug
 
-      - name: Launch app on emulator and capture crash log
+      - name: Run on emulator, screenshot and capture logs
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 29
@@ -41,12 +41,24 @@ jobs:
           emulator-boot-timeout: 600
           script: |
             adb wait-for-device
-            adb shell input keyevent 82 || true
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb logcat -c
             adb shell am start -n com.voxelsandbox/.MainActivity || true
-            sleep 30
+            sleep 45
+            adb exec-out screencap -p > shot_day.png || true
+            # 旋转视角制造不同画面
+            adb shell input swipe 600 400 300 400 300 || true
+            sleep 2
+            adb exec-out screencap -p > shot_2.png || true
             echo "================= CRASH / APP LOGCAT ================="
-            adb logcat -d -v threadtime | grep -iE "voxelsandbox|AndroidRuntime|VoxelCrash|FATAL|No configs match" || true
-            echo "================= LAST LOGCAT LINES ================="
-            adb logcat -d -v threadtime | tail -60
+            adb logcat -d -v threadtime | grep -iE "VoxelCrash|FATAL EXCEPTION|E/AndroidRuntime|Displayed com.voxelsandbox|GLES|Shader" || true
+            echo "================= SCREENSHOT SIZE ================="
+            ls -l shot_day.png shot_2.png || true
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: shot_*.png
+          if-no-files-found: warn

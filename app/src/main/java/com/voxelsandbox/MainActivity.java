@@ -58,7 +58,7 @@ public class MainActivity extends Activity {
     private int pressedBtn = -1; // 视觉按下的按钮
 
     private static final float SENS = 0.0055f;
-    private static final String VERSION_TAG = "v1.1.2";
+    private static final String VERSION_TAG = "v2.0.0";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -359,6 +359,14 @@ public class MainActivity extends Activity {
                     paint.setStyle(Paint.Style.FILL);
                 }
             }
+            // 当前方块名
+            paint.setTextAlign(Paint.Align.CENTER);
+            paint.setTextSize(dp(12));
+            paint.setColor(0xE6FFFFFF);
+            paint.setFakeBoldText(true);
+            c.drawText(blockName(Block.PALETTE[input.selectedSlot]),
+                    (slotBar.left + slotBar.right) / 2f, slotBar.bottom + dp(15), paint);
+            paint.setFakeBoldText(false);
         }
 
         private void drawFlyButton(Canvas c) {
@@ -402,18 +410,19 @@ public class MainActivity extends Activity {
         }
 
         private void drawJoystick(Canvas c) {
-            if (!joyActive) return;
             float cx = dp(100), cy = screenH - dp(100);
-            float baseR = dp(55), knobR = dp(26);
+            float baseR = dp(55), knobR = dp(24);
+            // 静止时也显示淡淡的底盘，提示摇杆位置
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(0x33FFFFFF);
+            paint.setColor(joyActive ? 0x33FFFFFF : 0x1FFFFFFF);
             c.drawCircle(cx, cy, baseR, paint);
             paint.setStyle(Paint.Style.STROKE);
-            paint.setColor(0x66FFFFFF);
+            paint.setColor(joyActive ? 0x77FFFFFF : 0x33FFFFFF);
             paint.setStrokeWidth(dp(2));
             c.drawCircle(cx, cy, baseR, paint);
+            if (!joyActive) return;
             paint.setStyle(Paint.Style.FILL);
-            paint.setColor(0xAAFFFFFF);
+            paint.setColor(0xCCFFFFFF);
             c.drawCircle(cx + joyDx, cy + joyDy, knobR, paint);
         }
     }
@@ -433,6 +442,24 @@ public class MainActivity extends Activity {
             case Block.GLASS:  return 0xFFb0bec5;
             case Block.GLOW:   return 0xFFd9a441;
             default:           return 0xFF888888;
+        }
+    }
+
+    private static String blockName(int id) {
+        switch (id) {
+            case Block.GRASS:  return "草地";
+            case Block.DIRT:   return "泥土";
+            case Block.STONE:  return "石头";
+            case Block.WOOD:   return "木头";
+            case Block.LEAVES: return "树叶";
+            case Block.SAND:   return "沙子";
+            case Block.PLANK:  return "木板";
+            case Block.COBBLE: return "圆石";
+            case Block.BRICK:  return "红砖";
+            case Block.SNOW:   return "积雪";
+            case Block.GLASS:  return "玻璃";
+            case Block.GLOW:   return "发光石";
+            default:           return "";
         }
     }
 }

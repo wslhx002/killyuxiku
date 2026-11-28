@@ -92,9 +92,9 @@ public class World {
         float base = SEA_LEVEL + 2;
         for (int x = 0; x < SX; x++) {
             for (int z = 0; z < SZ; z++) {
-                float n = noise.fbm(x * 0.018f, z * 0.018f, 4, 2.0f, 0.5f);
+                float n = noise.fbm(x * 0.020f, z * 0.020f, 4, 2.0f, 0.5f);
                 float mountain = Math.max(0, noise.fbm(x * 0.006f + 100, z * 0.006f + 100, 3, 2.0f, 0.5f));
-                int h = (int) (base + n * 10 + mountain * mountain * 28);
+                int h = (int) (base + n * 7 + mountain * mountain * 20);
                 if (h < 2) h = 2;
                 if (h >= SY) h = SY - 1;
                 for (int y = 0; y <= h; y++) {
@@ -104,7 +104,7 @@ public class World {
                         else if (h >= SNOW_LINE) id = Block.SNOW;
                         else id = Block.GRASS;
                     } else if (y >= h - 3) {
-                        id = (h <= SEA_LEVEL + 1) ? Block.SAND : Block.DIRT;
+                        id = (h <= SEA_LEVEL + 2) ? Block.SAND : Block.DIRT;
                     } else {
                         id = Block.STONE;
                     }
@@ -142,6 +142,23 @@ public class World {
     private void setRaw(int x, int y, int z, int id) {
         if (x < 0 || x >= SX || y < 0 || y >= SY || z < 0 || z >= SZ) return;
         blocks[idx(x, y, z)] = (byte) id;
+    }
+
+    /** 寻找一个位于水面之上、非雪线的安全出生点，返回 {x, 地表y, z} */
+    public int[] findSpawn() {
+        int cx = SX / 2, cz = SZ / 2;
+        for (int r = 0; r < 40; r++) {
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    int x = cx + dx, z = cz + dz;
+                    if (x < 2 || x >= SX - 2 || z < 2 || z >= SZ - 2) continue;
+                    int h = getSurfaceHeight(x, z);
+                    if (h > SEA_LEVEL + 1 && h < SNOW_LINE - 3) return new int[]{x, h, z};
+                }
+            }
+        }
+        int h = getSurfaceHeight(cx, cz);
+        return new int[]{cx, h, cz};
     }
 
     public int getSurfaceHeight(int x, int z) {

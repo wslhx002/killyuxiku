@@ -1,29 +1,35 @@
 package com.voxelsandbox;
 
 /**
- * 昼夜循环：维护 0..1 的时间进度，提供太阳/月亮方向、天空色与地形光照色调。
- * 时间 t：0=日出，0.25=正午，0.5=日落，0.75=午夜。
+ * 昼夜循环。时间 t ∈ [0,1) 对应 24 小时：
+ * 0.00=午夜, 0.25=日出(6点), 0.50=正午(12点), 0.75=日落(18点)。
  */
 public final class SkyCycle {
     /** 一个完整昼夜的真实秒数 */
-    public static final float CYCLE_SECONDS = 180f;
+    public static final float CYCLE_SECONDS = 480f;
 
-    private float t = 0.28f; // 从上午开始
-    /** 暴露给 HUD 读取（渲染线程写，UI 线程读） */
+    private float t = 0.30f; // 从上午开始
+    /** 渲染线程写，UI 线程读 */
     public volatile float dayTime = t;
 
     public void update(float dt) {
         t += dt / CYCLE_SECONDS;
-        t -= (float) Math.floor(t); // 归一化到 [0,1)
+        t -= (float) Math.floor(t);
         dayTime = t;
     }
 
-    /** 太阳方向单位向量：t=0 东地平线 → 0.25 天顶 → 0.5 西地平线 → 0.75 脚下 */
+    /** t 转 24 小时制时刻，返回 [小时, 分钟] */
+    public int[] clock() {
+        int minutes = (int) (t * 24f * 60f);
+        return new int[]{(minutes / 60) % 24, minutes % 60};
+    }
+
+    /** 太阳方向单位向量：6点东地平线 → 12点天顶 → 18点西地平线 */
     public float[] sunDirection() {
-        double a = t * 2.0 * Math.PI;
+        double a = (t - 0.25) * 2.0 * Math.PI;
         float x = (float) Math.cos(a);
         float y = (float) Math.sin(a);
-        float z = 0.18f;
+        float z = 0.22f;
         float l = (float) Math.sqrt(x * x + y * y + z * z);
         return new float[]{x / l, y / l, z / l};
     }
@@ -33,26 +39,26 @@ public final class SkyCycle {
         return new float[]{-s[0], -s[1], -s[2]};
     }
 
-    /** 太阳高度角，范围 [-1,1]，>0 为白天 */
+    /** 太阳高度角 [-1,1]，>0 为白天 */
     public float sunElevation() {
-        return (float) Math.sin(t * 2.0 * Math.PI);
+        return (float) Math.sin((t - 0.25) * 2.0 * Math.PI);
     }
 
     public boolean isDay() {
         return sunElevation() > 0.02f;
     }
 
-    // 天空色关键帧（t, r, g, b），按 t 循环插值
+    // 天空色关键帧（t, r, g, b）
     private static final float[][] SKY_STOPS = {
-            {0.00f, 0.96f, 0.58f, 0.46f}, // 日出：暖橙粉
-            {0.12f, 0.60f, 0.80f, 0.92f}, // 清晨
-            {0.25f, 0.44f, 0.72f, 0.96f}, // 正午：蓝
-            {0.40f, 0.55f, 0.80f, 0.93f}, // 下午
-            {0.50f, 0.97f, 0.47f, 0.33f}, // 日落：橙红
-            {0.57f, 0.55f, 0.30f, 0.48f}, // 暮光：紫
-            {0.66f, 0.14f, 0.10f, 0.30f}, // 入夜
-            {0.80f, 0.02f, 0.03f, 0.10f}, // 深夜：藏青
-            {0.92f, 0.10f, 0.08f, 0.22f}, // 黎明前
+            {0.00f, 0.03f, 0.04f, 0.11f}, // 午夜
+            {0.18f, 0.09f, 0.10f, 0.22f}, // 黎明前
+            {0.24f, 0.72f, 0.52f, 0.44f}, // 日出暖色
+            {0.30f, 0.52f, 0.74f, 0.95f}, // 清晨
+            {0.50f, 0.40f, 0.70f, 0.98f}, // 正午湛蓝
+            {0.70f, 0.50f, 0.75f, 0.96f}, // 午后
+            {0.765f, 0.90f, 0.56f, 0.40f}, // 日落
+            {0.81f, 0.38f, 0.28f, 0.46f}, // 暮光紫
+            {0.88f, 0.07f, 0.07f, 0.18f}, // 入夜
     };
 
     public float[] skyColor() {
@@ -60,17 +66,16 @@ public final class SkyCycle {
         return new float[]{c[0], c[1], c[2], 1f};
     }
 
-    /** 地形整体光照色调（RGB 乘数）：白天白，晨昏暖，夜晚冷暗 */
+    /** 地形光照色调（RGB 乘数）：白天接近纯白，晨昏偏暖，夜晚偏冷但仍可辨认 */
     public float[] lightTint() {
         float e = sunElevation();
-        float[] horizon = {1.0f, 0.72f, 0.50f}; // 地平线处的暖色
-        float[] white = {1.0f, 1.0f, 1.0f};
-        float[] night = {0.22f, 0.26f, 0.42f};
+        float[] warm = {1.00f, 0.84f, 0.70f};
+        float[] white = {1.00f, 1.00f, 1.00f};
+        float[] night = {0.42f, 0.47f, 0.64f};
         if (e >= 0) {
-            return lerp3(horizon, white, smoothstep(0f, 0.45f, e));
-        } else {
-            return lerp3(horizon, night, smoothstep(0f, 0.45f, -e));
+            return lerp3(warm, white, smoothstep(0f, 0.30f, e));
         }
+        return lerp3(warm, night, smoothstep(0f, 0.25f, -e));
     }
 
     private static float[] cyclicLerp(float[][] stops, float t) {

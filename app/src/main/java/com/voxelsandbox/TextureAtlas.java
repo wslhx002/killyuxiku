@@ -1,75 +1,69 @@
 package com.voxelsandbox;
 
 import android.graphics.Bitmap;
-import android.graphics.Canvas;
-import android.graphics.Color;
-import android.graphics.Paint;
 import android.opengl.GLES20;
 import android.opengl.GLUtils;
 
+import java.util.Arrays;
 import java.util.Random;
 
 /**
  * 程序化生成 4x4 纹理图集（每格 16x16 像素，原创像素画）。
- * 不依赖任何外部图片资源。
+ *
+ * 直接生成 int[] 像素后一次性建 Bitmap，避免 Canvas 逐像素绘制产生的
+ * 空洞（透明像素会被着色器 discard，表现为“穿透噪点”）。
  */
 public class TextureAtlas {
     public static final int TILES_PER_ROW = 4;
     public static final int TILE_PX = 16;
-    public static final int ATLAS_PX = TILE_PX * TILES_PER_ROW; // 64
+    public static final int ATLAS_PX = TILE_PX * TILES_PER_ROW;
 
     private static final float HALF_TEXEL = 0.5f / ATLAS_PX;
 
     public int textureId = 0;
 
-    /** 返回 tile 的 GL 纹理坐标 [u0,v0,u1,v1]，已做半像素内缩避免 bleeding */
+    /** 返回 tile 的 GL 纹理坐标 [u0,v0,u1,v1]，半像素内缩避免相邻格渗色 */
     public float[] uvForTile(int tileIndex) {
         int col = tileIndex % TILES_PER_ROW;
         int row = tileIndex / TILES_PER_ROW;
         float u0 = (float) col / TILES_PER_ROW + HALF_TEXEL;
         float u1 = (float) (col + 1) / TILES_PER_ROW - HALF_TEXEL;
-        // Bitmap 原点在左上，GL 原点在左下 → 翻转 V
         float v1 = 1f - (float) row / TILES_PER_ROW - HALF_TEXEL;
         float v0 = 1f - (float) (row + 1) / TILES_PER_ROW + HALF_TEXEL;
         return new float[]{u0, v0, u1, v1};
     }
 
     public void build() {
-        Bitmap bmp = Bitmap.createBitmap(ATLAS_PX, ATLAS_PX, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(bmp);
-        Paint p = new Paint();
-        p.setAntiAlias(false);
-        p.setFilterBitmap(false);
+        int[] atlas = new int[ATLAS_PX * ATLAS_PX];
+        // 兜底填充不透明灰色，任何未绘制区域也不会出现透明噪点
+        Arrays.fill(atlas, 0xFF7F7F7F);
 
-        drawTile(c, p, 0, 0, grassTop());      // 0 grass top
-        drawTile(c, p, 1, 0, grassSide());     // 1 grass side
-        drawTile(c, p, 2, 0, dirt());          // 2 dirt
-        drawTile(c, p, 3, 0, stone());         // 3 stone
-        drawTile(c, p, 0, 1, woodTop());       // 4 wood top
-        drawTile(c, p, 1, 1, leaves());        // 5 leaves
-        drawTile(c, p, 2, 1, sand());          // 6 sand
-        drawTile(c, p, 3, 1, water());         // 7 water
-        drawTile(c, p, 0, 2, plank());         // 8 plank
-        drawTile(c, p, 1, 2, cobble());        // 9 cobble
-        drawTile(c, p, 2, 2, brick());         // 10 brick
-        drawTile(c, p, 3, 2, glass());         // 11 glass
-        drawTile(c, p, 0, 3, snowSide());      // 12 snow side
-        drawTile(c, p, 1, 3, woodSide());      // 13 wood side
-        drawTile(c, p, 2, 3, glowStone());     // 14 发光石
-        drawTile(c, p, 3, 3, stone());         // 15 spare
+        put(atlas, 0, 0, grassTop());
+        put(atlas, 1, 0, grassSide());
+        put(atlas, 2, 0, dirt());
+        put(atlas, 3, 0, stone());
+        put(atlas, 0, 1, woodTop());
+        put(atlas, 1, 1, leaves());
+        put(atlas, 2, 1, sand());
+        put(atlas, 3, 1, water());
+        put(atlas, 0, 2, plank());
+        put(atlas, 1, 2, cobble());
+        put(atlas, 2, 2, brick());
+        put(atlas, 3, 2, glass());
+        put(atlas, 0, 3, snowSide());
+        put(atlas, 1, 3, woodSide());
+        put(atlas, 2, 3, glowStone());
+        put(atlas, 3, 3, snowTop());
 
+        Bitmap bmp = Bitmap.createBitmap(atlas, ATLAS_PX, ATLAS_PX, Bitmap.Config.ARGB_8888);
         upload(bmp);
         bmp.recycle();
     }
 
-    private void drawTile(Canvas c, Paint p, int col, int row, int[][] px) {
-        int ox = col * TILE_PX;
-        int oy = row * TILE_PX;
+    private void put(int[] atlas, int col, int row, int[] tile) {
         for (int y = 0; y < TILE_PX; y++) {
-            for (int x = 0; x < TILE_PX; x++) {
-                p.setColor(px[y][x]);
-                c.drawRect(ox + x, oy + y, ox + x + 1, oy + y + 1, p);
-            }
+            int dst = (row * TILE_PX + y) * ATLAS_PX + col * TILE_PX;
+            System.arraycopy(tile, y * TILE_PX, atlas, dst, TILE_PX);
         }
     }
 
@@ -86,206 +80,181 @@ public class TextureAtlas {
         GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
     }
 
-    // ---- 各 tile 的像素数据（16x16 ARGB）----
+    // ---------- 工具 ----------
+    private static int[] buf() { return new int[TILE_PX * TILE_PX]; }
 
-    private int[][] grassTop() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        Random r = new Random(7);
-        for (int y = 0; y < TILE_PX; y++)
-            for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(3);
-                int base = (n == 0) ? 0xFF5fae3a : (n == 1) ? 0xFF6cc243 : 0xFF559e32;
-                g[y][x] = base;
-            }
-        return g;
+    private static void set(int[] t, int x, int y, int c) { t[y * TILE_PX + x] = c; }
+
+    private static int mix(int a, int b, float k) {
+        int ar = (a >> 16) & 0xFF, ag = (a >> 8) & 0xFF, ab = a & 0xFF;
+        int br = (b >> 16) & 0xFF, bg = (b >> 8) & 0xFF, bb = b & 0xFF;
+        int r = (int) (ar + (br - ar) * k);
+        int g = (int) (ag + (bg - ag) * k);
+        int bl = (int) (ab + (bb - ab) * k);
+        return 0xFF000000 | (r << 16) | (g << 8) | bl;
     }
 
-    private int[][] grassSide() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        Random r = new Random(11);
-        for (int y = 0; y < TILE_PX; y++)
-            for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(3);
-                int c;
-                if (y < 4) {
-                    c = (n == 0) ? 0xFF5fae3a : (n == 1) ? 0xFF6cc243 : 0xFF559e32;
-                } else {
-                    c = (n == 0) ? 0xFF8a5a2b : (n == 1) ? 0xFF7a4e25 : 0xFF96632f;
-                }
-                g[y][x] = c;
-            }
-        return g;
+    /** 两色随机抖动填充，形成细腻的像素噪点 */
+    private static int[] speckle(long seed, int c1, int c2, int ratio) {
+        int[] t = buf();
+        Random r = new Random(seed);
+        for (int i = 0; i < t.length; i++) t[i] = (r.nextInt(100) < ratio) ? c2 : c1;
+        return t;
     }
 
-    private int[][] dirt() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        Random r = new Random(3);
-        for (int y = 0; y < TILE_PX; y++)
-            for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(4);
-                g[y][x] = (n == 0) ? 0xFF8a5a2b : (n == 1) ? 0xFF7a4e25
-                        : (n == 2) ? 0xFF96632f : 0xFF6f4520;
-            }
-        return g;
+    // ---------- 各方块 ----------
+    private int[] grassTop() {
+        return speckle(7, 0xFF5DAE3C, 0xFF6EC24A, 45);
     }
 
-    private int[][] stone() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        Random r = new Random(5);
-        for (int y = 0; y < TILE_PX; y++)
-            for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(4);
-                g[y][x] = (n == 0) ? 0xFF8a8a8a : (n == 1) ? 0xFF7d7d7d
-                        : (n == 2) ? 0xFF979797 : 0xFF707070;
-            }
-        return g;
+    private int[] grassSide() {
+        int[] t = speckle(11, 0xFF8A5A2B, 0xFF7A4E25, 40);
+        Random r = new Random(12);
+        for (int x = 0; x < TILE_PX; x++) {
+            int depth = 3 + r.nextInt(3);
+            for (int y = 0; y < depth; y++) set(t, x, y, (y == depth - 1) ? 0xFF4E8F31 : 0xFF5DAE3C);
+        }
+        return t;
     }
 
-    private int[][] woodTop() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        int cx = 8, cy = 8;
+    private int[] dirt() {
+        return speckle(3, 0xFF8A5A2B, 0xFF70441F, 42);
+    }
+
+    private int[] stone() {
+        int[] t = speckle(5, 0xFF8A8A8A, 0xFF777777, 45);
+        Random r = new Random(6);
+        for (int i = 0; i < 10; i++) {
+            int x = r.nextInt(TILE_PX - 3) + 1, y = r.nextInt(TILE_PX - 2) + 1;
+            set(t, x, y, 0xFF6E6E6E);
+            set(t, x + 1, y, 0xFF6E6E6E);
+            set(t, x, y + 1, 0xFF6E6E6E);
+        }
+        return t;
+    }
+
+    private int[] woodTop() {
+        int[] t = buf();
         for (int y = 0; y < TILE_PX; y++)
             for (int x = 0; x < TILE_PX; x++) {
-                double d = Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                double d = Math.sqrt((x - 7.5) * (x - 7.5) + (y - 7.5) * (y - 7.5));
                 int ring = ((int) d) % 3;
-                int c = (ring == 0) ? 0xFF9a6b3f : (ring == 1) ? 0xFF875a32 : 0xFF734a28;
-                g[y][x] = c;
+                set(t, x, y, ring == 0 ? 0xFF9A6B3F : ring == 1 ? 0xFF875A32 : 0xFF754B27);
             }
-        return g;
+        return t;
     }
 
-    private int[][] leaves() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        Random r = new Random(13);
-        for (int y = 0; y < TILE_PX; y++)
-            for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(4);
-                g[y][x] = (n == 0) ? 0xFF2f7d31 : (n == 1) ? 0xFF3a9140
-                        : (n == 2) ? 0xFF276628 : 0xFF45a34a;
-            }
-        return g;
+    private int[] woodSide() {
+        int[] t = speckle(31, 0xFF6E4A28, 0xFF5E3F22, 45);
+        for (int x = 0; x < TILE_PX; x++)
+            if (x % 5 == 0)
+                for (int y = 0; y < TILE_PX; y++) set(t, x, y, 0xFF4F341B);
+        return t;
     }
 
-    private int[][] sand() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        Random r = new Random(17);
-        for (int y = 0; y < TILE_PX; y++)
-            for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(3);
-                g[y][x] = (n == 0) ? 0xFFe6d79a : (n == 1) ? 0xFFdccb86 : 0xFFf0e3ab;
-            }
-        return g;
+    private int[] leaves() {
+        int[] t = speckle(13, 0xFF2F7D31, 0xFF3B9140, 50);
+        Random r = new Random(14);
+        for (int i = 0; i < 26; i++) set(t, r.nextInt(TILE_PX), r.nextInt(TILE_PX), 0xFF1F5B21);
+        return t;
     }
 
-    private int[][] water() {
-        int[][] g = new int[TILE_PX][TILE_PX];
+    private int[] sand() {
+        return speckle(17, 0xFFE4D595, 0xFFF0E3AB, 40);
+    }
+
+    private int[] water() {
+        int[] t = buf();
         Random r = new Random(19);
         for (int y = 0; y < TILE_PX; y++)
             for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(3);
-                int a = 150 + r.nextInt(40);
-                g[y][x] = Color.argb(a, 50 + n * 6, 110 + n * 10, 220 + n * 8);
+                boolean wave = ((x + y) % 8 == 0) || ((x - y + 32) % 9 == 0);
+                int rC = wave ? 74 : 56, gC = wave ? 140 : 118, bC = wave ? 236 : 216;
+                t[y * TILE_PX + x] = (170 << 24) | (rC << 16) | (gC << 8) | bC;
+                if (r.nextInt(12) == 0) t[y * TILE_PX + x] = (150 << 24) | (0x50 << 16) | (0xA0 << 8) | 0xE8;
             }
-        return g;
+        return t;
     }
 
-    private int[][] plank() {
-        int[][] g = new int[TILE_PX][TILE_PX];
+    private int[] plank() {
+        int[] t = buf();
         for (int y = 0; y < TILE_PX; y++)
             for (int x = 0; x < TILE_PX; x++) {
                 int band = (y / 4) % 2;
-                int c = (band == 0) ? 0xFFb5864a : 0xFFa07339;
-                if (y % 4 == 0) c = 0xFF7a5526;
-                g[y][x] = c;
+                int c = band == 0 ? 0xFFB5864A : 0xFFA07339;
+                if (y % 4 == 0) c = 0xFF7A5526;
+                if (x % 8 == 0) c = mix(c, 0xFF6E4A22, 0.5f);
+                set(t, x, y, c);
             }
-        return g;
+        return t;
     }
 
-    private int[][] cobble() {
-        int[][] g = stone();
-        Random r = new Random(23);
-        for (int i = 0; i < 14; i++) {
-            int x = r.nextInt(TILE_PX), y = r.nextInt(TILE_PX);
+    private int[] cobble() {
+        int[] t = speckle(23, 0xFF8A8A8A, 0xFF6F6F6F, 45);
+        Random r = new Random(24);
+        for (int i = 0; i < 12; i++) {
+            int x = r.nextInt(TILE_PX - 3) + 1, y = r.nextInt(TILE_PX - 3) + 1;
             int w = 2 + r.nextInt(3), h = 2 + r.nextInt(3);
-            int shade = 0xFF6a6a6a + r.nextInt(0x202020);
+            int shade = 0xFF636363 + (r.nextInt(0x28) << 16) + (r.nextInt(0x28) << 8) + r.nextInt(0x28);
             for (int yy = 0; yy < h; yy++)
                 for (int xx = 0; xx < w; xx++)
-                    if (x + xx < TILE_PX && y + yy < TILE_PX) g[y + yy][x + xx] = shade;
+                    if (x + xx < TILE_PX && y + yy < TILE_PX) set(t, x + xx, y + yy, shade);
         }
-        return g;
+        return t;
     }
 
-    private int[][] brick() {
-        int[][] g = new int[TILE_PX][TILE_PX];
+    private int[] brick() {
+        int[] t = buf();
+        Random r = new Random(27);
         for (int y = 0; y < TILE_PX; y++)
             for (int x = 0; x < TILE_PX; x++) {
                 int row = y / 4;
                 int offset = (row % 2) * 4;
-                boolean mortar = (y % 4 == 0) || ((x + offset) % 8 == 0);
-                g[y][x] = mortar ? 0xFFb8b0a4 : 0xFFa14a3a;
+                boolean mortar = (y % 4 == 3) || ((x + offset) % 8 == 0);
+                int c = mortar ? 0xFFB8B0A4 : (r.nextInt(3) == 0 ? 0xFFA84E3C : 0xFFB05642);
+                set(t, x, y, c);
             }
-        return g;
+        return t;
     }
 
-    private int[][] glass() {
-        int[][] g = new int[TILE_PX][TILE_PX];
+    private int[] glass() {
+        int[] t = buf();
         for (int y = 0; y < TILE_PX; y++)
             for (int x = 0; x < TILE_PX; x++) {
-                boolean border = (x == 0 || y == 0 || x == 15 || y == 15);
-                g[y][x] = border ? 0xFFcfd8dc : Color.argb(40, 200, 230, 240);
+                boolean border = x == 0 || y == 0 || x == TILE_PX - 1 || y == TILE_PX - 1;
+                boolean glint = (x == y && x > 2 && x < 7);
+                if (border) set(t, x, y, 0xFFDCE6EA);
+                else if (glint) set(t, x, y, (60 << 24) | 0xFFFFFF);
+                else set(t, x, y, (34 << 24) | 0xC8E4F0);
             }
-        return g;
+        return t;
     }
 
-    private int[][] snowSide() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        Random r = new Random(29);
-        for (int y = 0; y < TILE_PX; y++)
-            for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(3);
-                int c;
-                if (y < 4) {
-                    c = (n == 0) ? 0xFFf4f8fb : (n == 1) ? 0xFFe8eef5 : 0xFFffffff;
-                } else {
-                    c = (n == 0) ? 0xFF8a5a2b : (n == 1) ? 0xFF7a4e25 : 0xFF96632f;
-                }
-                g[y][x] = c;
-            }
-        return g;
+    private int[] snowTop() {
+        return speckle(33, 0xFFF7FBFF, 0xFFE6EFF8, 45);
     }
 
-    private int[][] woodSide() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        Random r = new Random(31);
-        for (int y = 0; y < TILE_PX; y++)
-            for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(3);
-                int base = (n == 0) ? 0xFF6e4a28 : (n == 1) ? 0xFF7d5530 : 0xFF5e3f22;
-                // 竖向纹理
-                if ((x % 5) == 0) base = 0xFF4f341b;
-                g[y][x] = base;
-            }
-        return g;
+    private int[] snowSide() {
+        int[] t = speckle(29, 0xFF8A5A2B, 0xFF7A4E25, 40);
+        Random r = new Random(30);
+        for (int x = 0; x < TILE_PX; x++) {
+            int depth = 4 + r.nextInt(2);
+            for (int y = 0; y < depth; y++) set(t, x, y, y == depth - 1 ? 0xFFDDE8F2 : 0xFFF2F8FD);
+        }
+        return t;
     }
 
-    private int[][] glowStone() {
-        int[][] g = new int[TILE_PX][TILE_PX];
-        Random r = new Random(37);
-        for (int y = 0; y < TILE_PX; y++)
-            for (int x = 0; x < TILE_PX; x++) {
-                int n = r.nextInt(4);
-                g[y][x] = (n == 0) ? 0xFF3a2a18 : (n == 1) ? 0xFF4a3420
-                        : (n == 2) ? 0xFF2e2012 : 0xFF574028;
-            }
-        // 亮斑：暖黄色发光颗粒
-        for (int i = 0; i < 20; i++) {
+    private int[] glowStone() {
+        int[] t = speckle(37, 0xFF3A2A18, 0xFF4A3420, 45);
+        Random r = new Random(38);
+        for (int i = 0; i < 18; i++) {
             int x = r.nextInt(TILE_PX), y = r.nextInt(TILE_PX);
             int s = 1 + r.nextInt(2);
-            int col = (r.nextInt(3) == 0) ? 0xFFffe9a8 : 0xFFffc857;
+            int col = r.nextInt(3) == 0 ? 0xFFFFE9A8 : 0xFFFFC857;
             for (int dy = 0; dy < s; dy++)
                 for (int dx = 0; dx < s; dx++)
-                    if (x + dx < TILE_PX && y + dy < TILE_PX) g[y + dy][x + dx] = col;
+                    if (x + dx < TILE_PX && y + dy < TILE_PX) set(t, x + dx, y + dy, col);
         }
-        return g;
+        return t;
     }
 }

@@ -14,18 +14,23 @@ public class Shader {
     private static final String TAG = "Shader";
 
     public final int program;
-    public final int aPos, aUv, aLight, uMVP, uTex, uLightTint;
+    public final int aPos, aUv, aLight, uMVP, uTex, uLightTint, uCamPos, uFogColor, uFogParam;
 
     private static final String VS =
         "attribute vec3 aPos;\n" +
         "attribute vec2 aUv;\n" +
         "attribute float aLight;\n" +
         "uniform mat4 uMVP;\n" +
+        "uniform vec3 uCamPos;\n" +
         "varying vec2 vUv;\n" +
         "varying float vLight;\n" +
+        "varying float vFog;\n" +
+        "uniform vec2 uFogParam;\n" + // x=start, y=end
         "void main() {\n" +
         "    vUv = aUv;\n" +
         "    vLight = aLight;\n" +
+        "    float d = length(aPos - uCamPos);\n" +
+        "    vFog = clamp((d - uFogParam.x) / max(uFogParam.y - uFogParam.x, 0.001), 0.0, 1.0);\n" +
         "    gl_Position = uMVP * vec4(aPos, 1.0);\n" +
         "}\n";
 
@@ -33,12 +38,16 @@ public class Shader {
         "precision mediump float;\n" +
         "varying vec2 vUv;\n" +
         "varying float vLight;\n" +
+        "varying float vFog;\n" +
         "uniform sampler2D uTex;\n" +
         "uniform vec3 uLightTint;\n" +
+        "uniform vec3 uFogColor;\n" +
         "void main() {\n" +
         "    vec4 c = texture2D(uTex, vUv);\n" +
         "    if (c.a < 0.02) discard;\n" +
-        "    gl_FragColor = vec4(c.rgb * vLight * uLightTint, c.a);\n" +
+        "    vec3 col = c.rgb * vLight * uLightTint;\n" +
+        "    col = mix(col, uFogColor, vFog);\n" +
+        "    gl_FragColor = vec4(col, c.a);\n" +
         "}\n";
 
     public Shader() {
@@ -59,9 +68,14 @@ public class Shader {
         uMVP   = GLES20.glGetUniformLocation(program, "uMVP");
         uTex   = GLES20.glGetUniformLocation(program, "uTex");
         uLightTint = GLES20.glGetUniformLocation(program, "uLightTint");
-        // 默认白色，避免未设置时渲染为黑色
+        uCamPos = GLES20.glGetUniformLocation(program, "uCamPos");
+        uFogColor = GLES20.glGetUniformLocation(program, "uFogColor");
+        uFogParam = GLES20.glGetUniformLocation(program, "uFogParam");
+        // 默认值，避免未设置时渲染为黑色
         GLES20.glUseProgram(program);
         GLES20.glUniform3f(uLightTint, 1f, 1f, 1f);
+        GLES20.glUniform3f(uFogColor, 0.60f, 0.78f, 0.95f);
+        GLES20.glUniform2f(uFogParam, 55f, 130f);
         GLES20.glUseProgram(0);
     }
 
